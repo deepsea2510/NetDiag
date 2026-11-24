@@ -1,6 +1,6 @@
 # NetDiag 网络诊断工具 v10.12
 
-本地运行的网络诊断桌面工具（PySide6 原生 GUI），包含批量 Ping、TCP/UDP 端口扫描、通用协议识别、**弱口令 / 未授权访问探测**、路由跟踪、**DNS 查询（dig）** 与 **SNMP 遍历（snmpwalk）**，并支持 **OID 自定义** 与 **MIB 文件导入识别**。Ping 在 Windows 上使用**原生 ICMP**，不再是每条一个 ping 进程。
+本地运行的网络诊断桌面工具（PySide6 原生 GUI）：原生 ICMP 批量 Ping、端口扫描、协议指纹识别、弱口令/未授权访问自查（默认关闭）、路由跟踪、DNS、SNMP v1-v3、WMI 只读查询、Syslog 服务。
 
 ## 使用边界与免责声明
 
