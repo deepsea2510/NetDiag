@@ -1,0 +1,19 @@
+# NetDiag 外挂字典示例：账号:口令
+# 也认 账号,口令 / 账号<Tab>口令 / 全角冒号；# 开头为注释
+admin:admin
+admin:123456
+admin:password
+root:password
+root:root
+root:toor
+admin:
+root:
+user:user
+guest:guest
+ubnt:ubnt
+cisco:cisco
+support:support
+telecomadmin:admintelecom
+CMCCAdmin:aDm8H%MdA
+admin:admin@123
+admin:Huawei@123

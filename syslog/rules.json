@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "name": "NetDiag 内置 Syslog 规则",
+  "rules": [
+    {
+      "name": "auth_login_failed",
+      "priority": 100,
+      "category": "认证登录",
+      "match": {"message": "failed password|authentication failure|invalid user|login failed|auth fail|failed login|incorrect password"},
+      "action": "classify"
+    },
+    {
+      "name": "auth_login_success",
+      "priority": 95,
+      "category": "认证登录",
+      "match": {"message": "accepted password|accepted publickey|session opened|login successful|authentication success"},
+      "action": "classify"
+    },
+    {
+      "name": "auth_sshd",
+      "priority": 92,
+      "category": "认证登录",
+      "match": {"tag": "sshd", "message": "sshd|accepted|failed|invalid|connection"},
+      "action": "classify"
+    },
+    {
+      "name": "auth_su",
+      "priority": 91,
+      "category": "认证登录",
+      "match": {"tag": "su", "message": "su:|su root|session opened|authentication"},
+      "action": "classify"
+    },
+    {
+      "name": "auth_sudo",
+      "priority": 91,
+      "category": "认证登录",
+      "match": {"tag": "sudo", "message": "sudo:|COMMAND=|sudo"},
+      "action": "classify"
+    },
+    {
+      "name": "security_access_denied",
+      "priority": 90,
+      "category": "安全告警",
+      "match": {"message": "access denied|permission denied|unauthorized|forbidden|not allowed"},
+      "action": "classify"
+    },
+    {
+      "name": "security_bruteforce",
+      "priority": 89,
+      "category": "安全告警",
+      "match": {"message": "attack|intrusion|brute.?force|malware|suspicious|vulnerab|exploit"},
+      "action": "classify"
+    },
+    {
+      "name": "account_change",
+      "priority": 88,
+      "category": "账户管理",
+      "match": {"message": "useradd|userdel|usermod|passwd|groupadd|new user|account (created|deleted|changed)"},
+      "action": "classify"
+    },
+    {
+      "name": "service_stop",
+      "priority": 86,
+      "category": "服务管理",
+      "match": {"message": "stopped|stopping|service.*stop|terminated|shutting down"},
+      "action": "classify"
+    },
+    {
+      "name": "network_firewall_drop",
+      "priority": 85,
+      "category": "网络防火墙",
+      "match": {"message": "DROP|REJECT|deny|blocked|firewall|UFW|fail2ban"},
+      "action": "classify"
+    },
+    {
+      "name": "network_iptables",
+      "priority": 84,
+      "category": "网络防火墙",
+      "match": {"tag": "iptables|kernel", "message": "iptables|IN=.*OUT=|SRC=|nftables"},
+      "action": "classify"
+    },
+    {
+      "name": "system_reboot_shutdown",
+      "priority": 85,
+      "category": "系统管理",
+      "match": {"message": "shutdown|reboot|power off|halt|system going down"},
+      "action": "classify"
+    },
+    {
+      "name": "disk_full",
+      "priority": 84,
+      "category": "磁盘存储",
+      "match": {"message": "no space left|disk full|filesystem full|storage full|inode.*full"},
+      "action": "classify",
+      "alert": {"count": 1, "window_s": 60, "level": "err", "cooldown_s": 600, "message": "磁盘空间已满：{host}（{count} 次）"}
+    },
+    {
+      "name": "disk_storage",
+      "priority": 80,
+      "category": "磁盘存储",
+      "match": {"message": "disk|filesystem|mount|volume|ext4|xfs|inode|mounted|unmounted"},
+      "action": "classify"
+    },
+    {
+      "name": "system_kernel",
+      "priority": 80,
+      "category": "系统内核",
+      "match": {"facility": "kern", "message": "kernel|oom|out of memory|segfault|panic|call trace"},
+      "action": "classify"
+    },
+    {
+      "name": "service_start",
+      "priority": 78,
+      "category": "服务管理",
+      "match": {"message": "started|starting|service.*start|daemon.*start"},
+      "action": "classify"
+    },
+    {
+      "name": "app_error",
+      "priority": 76,
+      "category": "应用错误",
+      "match": {"severity": ">=err", "message": "error|exception|traceback|fatal|failed|failure|critical"},
+      "action": "classify"
+    },
+    {
+      "name": "app_exception",
+      "priority": 75,
+      "category": "应用异常",
+      "match": {"message": "exception|traceback|NullPointer|StackOverflow|segfault|core dumped"},
+      "action": "classify"
+    },
+    {
+      "name": "backup_job",
+      "priority": 72,
+      "category": "备份任务",
+      "match": {"message": "backup|rsync|restore|dump|archive|snapshot"},
+      "action": "classify"
+    },
+    {
+      "name": "database",
+      "priority": 72,
+      "category": "数据库",
+      "match": {"message": "mysql|postgres|oracle|mongodb|redis|database|sql|db"},
+      "action": "classify"
+    },
+    {
+      "name": "webserver",
+      "priority": 72,
+      "category": "Web服务器",
+      "match": {"message": "nginx|apache|httpd|GET |POST |HTTP/1|status 40|status 50"},
+      "action": "classify"
+    },
+    {
+      "name": "cron_job",
+      "priority": 70,
+      "category": "计划任务",
+      "match": {"tag": "cron|crond|anacron", "message": "cron|scheduled|job|anacron"},
+      "action": "classify"
+    },
+    {
+      "name": "network_interface",
+      "priority": 70,
+      "category": "网络管理",
+      "match": {"message": "link is (up|down)|interface|NIC|ethtool|network.*down|carrier"},
+      "action": "classify"
+    },
+    {
+      "name": "network_dhcp",
+      "priority": 68,
+      "category": "网络服务",
+      "match": {"message": "dhcp|DHCPDISCOVER|DHCPOFFER|DHCPREQUEST"},
+      "action": "classify"
+    },
+    {
+      "name": "network_dns",
+      "priority": 68,
+      "category": "网络服务",
+      "match": {"message": "named|bind|dns|DNS|query|zone transfer"},
+      "action": "classify"
+    },
+    {
+      "name": "mail_service",
+      "priority": 68,
+      "category": "邮件服务",
+      "match": {"message": "postfix|sendmail|mail|smtp|dovecot|spam"},
+      "action": "classify"
+    },
+    {
+      "name": "network_vpn",
+      "priority": 68,
+      "category": "网络管理",
+      "match": {"message": "openvpn|ipsec|vpn|tunnel|strongswan"},
+      "action": "classify"
+    },
+    {
+      "name": "package_manager",
+      "priority": 66,
+      "category": "系统管理",
+      "match": {"message": "apt|yum|dnf|pacman|package|installed|upgraded"},
+      "action": "classify"
+    },
+    {
+      "name": "network_ntp",
+      "priority": 65,
+      "category": "网络服务",
+      "match": {"message": "ntpd|ntp|chrony|time sync|clock"},
+      "action": "classify"
+    },
+    {
+      "name": "severity_rewrite_noise",
+      "priority": 64,
+      "category": "低价值噪声",
+      "match": {"message": "heartbeat|keep.?alive|health check|ping"},
+      "action": "severity_rewrite",
+      "new_severity": "debug"
+    },
+    {
+      "name": "ignore_debug_noise",
+      "priority": 63,
+      "category": "低价值噪声",
+      "match": {"message": "ignore|discard noise|known benign"},
+      "action": "ignore"
+    },
+    {
+      "name": "uncategorized",
+      "priority": 1,
+      "category": "未分类",
+      "match": {},
+      "action": "classify"
+    },
+    {
+      "name": "alert_login_bruteforce",
+      "priority": 20,
+      "category": "认证登录",
+      "match": {"message": "failed password|authentication failure|invalid user|login failed"},
+      "action": "classify",
+      "alert": {"count": 5, "window_s": 60, "level": "warning", "cooldown_s": 300, "message": "疑似登录暴力破解：{host} 在 {window_s} 秒内失败 {count} 次"}
+    },
+    {
+      "name": "alert_critical_events",
+      "priority": 19,
+      "category": "系统告警",
+      "match": {"severity": ">=crit"},
+      "action": "classify",
+      "alert": {"count": 1, "window_s": 60, "level": "crit", "cooldown_s": 120, "message": "出现严重（crit及以上）事件：{host}，共 {count} 条"}
+    },
+    {
+      "name": "alert_firewall_surge",
+      "priority": 18,
+      "category": "网络防火墙",
+      "match": {"message": "DROP|REJECT|deny|blocked"},
+      "action": "classify",
+      "alert": {"count": 10, "window_s": 60, "level": "warning", "cooldown_s": 300, "message": "防火墙拒绝事件突增：{host}，{window_s} 秒内 {count} 次"}
+    },
+    {
+      "name": "alert_service_stop",
+      "priority": 17,
+      "category": "服务管理",
+      "match": {"message": "service.*stop|stopped|stopping|terminated"},
+      "action": "classify",
+      "alert": {"count": 3, "window_s": 120, "level": "warning", "cooldown_s": 300, "message": "服务停止事件频繁：{host}，{window_s} 秒内 {count} 次"}
+    }
+  ]
+}

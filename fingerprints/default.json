@@ -1,0 +1,1013 @@
+{
+ "version": 1,
+ "name": "NetDiag 内置服务指纹库",
+ "description": "参考 kscan 分层识别思路整理的常见服务/设备横幅规则，可用外挂 JSON 扩展",
+ "signatures": [
+  {
+   "name": "OpenSSH",
+   "pattern": "^SSH-2[.]0-OpenSSH_([0-9][0-9A-Za-z.]*)",
+   "service": "SSH",
+   "priority": 95,
+   "version_group": 1,
+   "ports": [
+    22
+   ]
+  },
+  {
+   "name": "OpenSSH旧版",
+   "pattern": "^SSH-1[.]99-OpenSSH",
+   "service": "SSH",
+   "priority": 90,
+   "ports": [
+    22
+   ]
+  },
+  {
+   "name": "Dropbear",
+   "pattern": "^SSH-2[.]0-Dropbear_([0-9.]+)",
+   "service": "SSH",
+   "priority": 92,
+   "version_group": 1
+  },
+  {
+   "name": "libssh",
+   "pattern": "SSH-2[.]0-libssh[_-]?([0-9.]*)",
+   "service": "SSH",
+   "priority": 88,
+   "version_group": 1
+  },
+  {
+   "name": "SSH通用",
+   "pattern": "^SSH-[12][.]",
+   "service": "SSH",
+   "priority": 20,
+   "ports": [
+    22
+   ]
+  },
+  {
+   "name": "Telnet登录提示",
+   "pattern": "(login:|username:|User Name:|Password:)",
+   "service": "Telnet",
+   "priority": 30,
+   "ports": [
+    23
+   ]
+  },
+  {
+   "name": "Cisco IOS",
+   "pattern": "Cisco IOS Software|IOS-XE|Cisco Adaptive Security",
+   "service": "Cisco IOS",
+   "priority": 85,
+   "ports": [
+    23
+   ]
+  },
+  {
+   "name": "MikroTik RouterOS",
+   "pattern": "RouterOS|MikroTik",
+   "service": "RouterOS",
+   "priority": 85,
+   "ports": [
+    22,
+    23,
+    80,
+    8291
+   ]
+  },
+  {
+   "name": "HP Comware",
+   "pattern": "Comware Software|H3C Comware",
+   "service": "Comware",
+   "priority": 80
+  },
+  {
+   "name": "vsftpd",
+   "pattern": "^220.*vsftpd",
+   "service": "FTP",
+   "priority": 90,
+   "ports": [
+    21
+   ]
+  },
+  {
+   "name": "ProFTPD",
+   "pattern": "^220.*ProFTPD[ /]?([0-9.]*)",
+   "service": "FTP",
+   "priority": 90,
+   "version_group": 1
+  },
+  {
+   "name": "Pure-FTPd",
+   "pattern": "^220.*Pure-FTPd",
+   "service": "FTP",
+   "priority": 90
+  },
+  {
+   "name": "FileZilla",
+   "pattern": "^220.*FileZilla",
+   "service": "FTP",
+   "priority": 90
+  },
+  {
+   "name": "IIS FTP",
+   "pattern": "^220.*Microsoft FTP Service",
+   "service": "FTP",
+   "priority": 90
+  },
+  {
+   "name": "Serv-U",
+   "pattern": "^220.*Serv-U",
+   "service": "FTP",
+   "priority": 88
+  },
+  {
+   "name": "FTP通用",
+   "pattern": "^220[- ].*(FTP|File Transfer)",
+   "service": "FTP",
+   "priority": 25
+  },
+  {
+   "name": "Postfix",
+   "pattern": "(220|ESMTP).*Postfix",
+   "service": "SMTP",
+   "priority": 90,
+   "ports": [
+    25,
+    465,
+    587
+   ]
+  },
+  {
+   "name": "Exim",
+   "pattern": "(220|ESMTP).*Exim[ ]?([0-9.]*)",
+   "service": "SMTP",
+   "priority": 90,
+   "version_group": 1
+  },
+  {
+   "name": "Sendmail",
+   "pattern": "(220|ESMTP).*Sendmail",
+   "service": "SMTP",
+   "priority": 88
+  },
+  {
+   "name": "Exchange",
+   "pattern": "(220|ESMTP).*Microsoft ESMTP",
+   "service": "SMTP",
+   "priority": 88
+  },
+  {
+   "name": "SMTP通用",
+   "pattern": "^220[- ].*(SMTP|ESMTP|Mail)",
+   "service": "SMTP",
+   "priority": 25
+  },
+  {
+   "name": "Dovecot POP3",
+   "pattern": "^\\+OK.*Dovecot",
+   "service": "POP3",
+   "priority": 88,
+   "ports": [
+    110,
+    995
+   ]
+  },
+  {
+   "name": "Dovecot IMAP",
+   "pattern": "^\\* OK.*Dovecot",
+   "service": "IMAP",
+   "priority": 88,
+   "ports": [
+    143,
+    993
+   ]
+  },
+  {
+   "name": "Courier POP3",
+   "pattern": "^\\+OK.*Courier",
+   "service": "POP3",
+   "priority": 85
+  },
+  {
+   "name": "Courier IMAP",
+   "pattern": "^\\* OK.*Courier",
+   "service": "IMAP",
+   "priority": 85
+  },
+  {
+   "name": "Cyrus IMAP",
+   "pattern": "^\\* OK.*Cyrus",
+   "service": "IMAP",
+   "priority": 85
+  },
+  {
+   "name": "POP3通用",
+   "pattern": "^\\+OK",
+   "service": "POP3",
+   "priority": 20
+  },
+  {
+   "name": "IMAP通用",
+   "pattern": "^\\* OK",
+   "service": "IMAP",
+   "priority": 20
+  },
+  {
+   "name": "nginx",
+   "pattern": "Server:[^\\r\\n]*nginx/([0-9][0-9.]*)",
+   "service": "HTTP",
+   "priority": 92,
+   "version_group": 1,
+   "ports": [
+    80,
+    443,
+    8080
+   ]
+  },
+  {
+   "name": "openresty",
+   "pattern": "Server:[^\\r\\n]*openresty/([0-9.]*)",
+   "service": "HTTP",
+   "priority": 93,
+   "version_group": 1
+  },
+  {
+   "name": "Tengine",
+   "pattern": "Server:[^\\r\\n]*Tengine/([0-9.]*)",
+   "service": "HTTP",
+   "priority": 92,
+   "version_group": 1
+  },
+  {
+   "name": "Apache",
+   "pattern": "Server:[^\\r\\n]*Apache/([0-9][0-9.]*)",
+   "service": "HTTP",
+   "priority": 91,
+   "version_group": 1
+  },
+  {
+   "name": "IIS",
+   "pattern": "Server:[^\\r\\n]*Microsoft-IIS/([0-9.]+)",
+   "service": "HTTP",
+   "priority": 91,
+   "version_group": 1
+  },
+  {
+   "name": "lighttpd",
+   "pattern": "Server:[^\\r\\n]*lighttpd/([0-9.]*)",
+   "service": "HTTP",
+   "priority": 90,
+   "version_group": 1
+  },
+  {
+   "name": "LiteSpeed",
+   "pattern": "Server:[^\\r\\n]*LiteSpeed",
+   "service": "HTTP",
+   "priority": 90,
+   "ports": [
+    80,
+    443,
+    8080
+   ]
+  },
+  {
+   "name": "Caddy",
+   "pattern": "Server:[^\\r\\n]*Caddy",
+   "service": "HTTP",
+   "priority": 88
+  },
+  {
+   "name": "Kestrel",
+   "pattern": "Server:[^\\r\\n]*Kestrel",
+   "service": "HTTP",
+   "priority": 88
+  },
+  {
+   "name": "Node.js",
+   "pattern": "Server:[^\\r\\n]*(node|Express|Fastify)",
+   "service": "HTTP",
+   "priority": 85
+  },
+  {
+   "name": "Jetty",
+   "pattern": "Server:[^\\r\\n]*Jetty|Jetty\\([0-9.]*\\)",
+   "service": "HTTP",
+   "priority": 88,
+   "ports": [
+    8080
+   ]
+  },
+  {
+   "name": "Tomcat",
+   "pattern": "Apache Tomcat|Server:[^\\r\\n]*Tomcat",
+   "service": "HTTP",
+   "priority": 88,
+   "ports": [
+    8080,
+    8443
+   ]
+  },
+  {
+   "name": "Go HTTP",
+   "pattern": "Server:[^\\r\\n]*Go-http-server",
+   "service": "HTTP",
+   "priority": 82
+  },
+  {
+   "name": "Envoy",
+   "pattern": "Server:[^\\r\\n]*envoy",
+   "service": "HTTP",
+   "priority": 82
+  },
+  {
+   "name": "HAProxy",
+   "pattern": "Server:[^\\r\\n]*HAProxy",
+   "service": "HTTP",
+   "priority": 82
+  },
+  {
+   "name": "Cloudflare",
+   "pattern": "Server:[^\\r\\n]*cloudflare|cf-ray:",
+   "service": "HTTP",
+   "priority": 86
+  },
+  {
+   "name": "Cherokee",
+   "pattern": "Server:[^\\r\\n]*Cherokee",
+   "service": "HTTP",
+   "priority": 82
+  },
+  {
+   "name": "IBM HTTP Server",
+   "pattern": "Server:[^\\r\\n]*IBM_HTTP_Server",
+   "service": "HTTP",
+   "priority": 82
+  },
+  {
+   "name": "Oracle HTTP",
+   "pattern": "Server:[^\\r\\n]*Oracle-HTTP-Server|Oracle HTTP Server",
+   "service": "HTTP",
+   "priority": 82
+  },
+  {
+   "name": "ASP.NET",
+   "pattern": "X-Powered-By:[^\\r\\n]*ASP[.]NET",
+   "service": "HTTP",
+   "priority": 84
+  },
+  {
+   "name": "PHP",
+   "pattern": "X-Powered-By:[^\\r\\n]*PHP/([0-9.]+)",
+   "service": "HTTP",
+   "priority": 80,
+   "version_group": 1
+  },
+  {
+   "name": "HTTP通用",
+   "pattern": "^HTTP/1[.[01] [0-9]{3}",
+   "service": "HTTP",
+   "priority": 10,
+   "ports": [
+    80,
+    443,
+    8080
+   ]
+  },
+  {
+   "name": "OpenWrt LuCI",
+   "pattern": "LuCI|OpenWrt|/cgi-bin/luci",
+   "service": "OpenWrt-LuCI",
+   "priority": 92,
+   "ports": [
+    80
+   ]
+  },
+  {
+   "name": "RouterOS Web",
+   "pattern": "MikroTik RouterOS|routeros",
+   "service": "RouterOS",
+   "priority": 90
+  },
+  {
+   "name": "Dell iDRAC",
+   "pattern": "iDRAC|Dell Embedded Remote Access",
+   "service": "iDRAC",
+   "priority": 92,
+   "ports": [
+    443,
+    80
+   ]
+  },
+  {
+   "name": "HP iLO",
+   "pattern": "HP Integrated Lights-Out|iLO [0-9]|hpilo",
+   "service": "iLO",
+   "priority": 92
+  },
+  {
+   "name": "Hikvision",
+   "pattern": "Hikvision|ISAPI|SDK/ISAPI",
+   "service": "Hikvision",
+   "priority": 92,
+   "ports": [
+    80,
+    443,
+    8000
+   ]
+  },
+  {
+   "name": "Dahua",
+   "pattern": "Dahua|dvrweb|DHIP",
+   "service": "Dahua",
+   "priority": 90
+  },
+  {
+   "name": "TP-LINK",
+   "pattern": "TP-LINK|TPLINK",
+   "service": "TP-LINK",
+   "priority": 88
+  },
+  {
+   "name": "Ubiquiti UniFi",
+   "pattern": "UniFi|Ubiquiti",
+   "service": "UniFi",
+   "priority": 88
+  },
+  {
+   "name": "FortiOS",
+   "pattern": "Fortinet|FortiGate|FortiOS",
+   "service": "FortiOS",
+   "priority": 90,
+   "ports": [
+    443,
+    10443
+   ]
+  },
+  {
+   "name": "pfSense",
+   "pattern": "pfSense",
+   "service": "pfSense",
+   "priority": 90
+  },
+  {
+   "name": "VMware ESXi",
+   "pattern": "VMware ESXi|ESXi",
+   "service": "ESXi",
+   "priority": 92,
+   "ports": [
+    443,
+    80,
+    902
+   ]
+  },
+  {
+   "name": "vCenter",
+   "pattern": "VMware vCenter|vSphere",
+   "service": "vCenter",
+   "priority": 90
+  },
+  {
+   "name": "Proxmox",
+   "pattern": "Proxmox Virtual Environment|proxmox",
+   "service": "Proxmox",
+   "priority": 90,
+   "ports": [
+    8006
+   ]
+  },
+  {
+   "name": "Synology DSM",
+   "pattern": "Synology|DiskStation",
+   "service": "Synology DSM",
+   "priority": 90,
+   "ports": [
+    5000,
+    5001
+   ]
+  },
+  {
+   "name": "QNAP",
+   "pattern": "QNAP|QTS [0-9]",
+   "service": "QNAP",
+   "priority": 90
+  },
+  {
+   "name": "TrueNAS",
+   "pattern": "TrueNAS|FreeNAS",
+   "service": "TrueNAS",
+   "priority": 88
+  },
+  {
+   "name": "IPMI BMC",
+   "pattern": "IPMI|[Bb]aseboard Management Controller|AMI MegaRAC",
+   "service": "IPMI/BMC",
+   "priority": 88,
+   "ports": [
+    623
+   ]
+  },
+  {
+   "name": "Zabbix",
+   "pattern": "Zabbix",
+   "service": "Zabbix",
+   "priority": 88,
+   "ports": [
+    80,
+    10051
+   ]
+  },
+  {
+   "name": "Grafana",
+   "pattern": "Grafana",
+   "service": "Grafana",
+   "priority": 88,
+   "ports": [
+    3000
+   ]
+  },
+  {
+   "name": "Kibana",
+   "pattern": "Kibana",
+   "service": "Kibana",
+   "priority": 88,
+   "ports": [
+    5601
+   ]
+  },
+  {
+   "name": "Jenkins",
+   "pattern": "Jenkins|X-Jenkins",
+   "service": "Jenkins",
+   "priority": 88,
+   "ports": [
+    8080
+   ]
+  },
+  {
+   "name": "GitLab",
+   "pattern": "GitLab",
+   "service": "GitLab",
+   "priority": 88
+  },
+  {
+   "name": "Nacos",
+   "pattern": "Nacos",
+   "service": "Nacos",
+   "priority": 88,
+   "ports": [
+    8848
+   ]
+  },
+  {
+   "name": "phpMyAdmin",
+   "pattern": "phpMyAdmin",
+   "service": "phpMyAdmin",
+   "priority": 85
+  },
+  {
+   "name": "Harbor",
+   "pattern": "Harbor|harbor",
+   "service": "Harbor",
+   "priority": 85
+  },
+  {
+   "name": "Sonatype Nexus",
+   "pattern": "Nexus Repository|Sonatype Nexus",
+   "service": "Nexus",
+   "priority": 85
+  },
+  {
+   "name": "Cacti",
+   "pattern": "Cacti",
+   "service": "Cacti",
+   "priority": 82
+  },
+  {
+   "name": "WebLogic",
+   "pattern": "WebLogic",
+   "service": "WebLogic",
+   "priority": 88,
+   "ports": [
+    7001,
+    7002
+   ]
+  },
+  {
+   "name": "WebSphere",
+   "pattern": "WebSphere",
+   "service": "WebSphere",
+   "priority": 88,
+   "ports": [
+    9060,
+    9080
+   ]
+  },
+  {
+   "name": "WildFly/JBoss",
+   "pattern": "WildFly|JBoss",
+   "service": "WildFly",
+   "priority": 85,
+   "ports": [
+    8080,
+    9990
+   ]
+  },
+  {
+   "name": "Redis",
+   "pattern": "redis_version:([0-9][0-9.]*)",
+   "service": "Redis",
+   "priority": 95,
+   "version_group": 1,
+   "ports": [
+    6379
+   ]
+  },
+  {
+   "name": "MySQL",
+   "pattern": "([0-9][0-9.]*)[- ]?(MySQL|MariaDB)|MySQL server",
+   "service": "MySQL",
+   "priority": 90,
+   "version_group": 1,
+   "ports": [
+    3306
+   ]
+  },
+  {
+   "name": "MariaDB",
+   "pattern": "MariaDB",
+   "service": "MariaDB",
+   "priority": 91,
+   "ports": [
+    3306
+   ]
+  },
+  {
+   "name": "PostgreSQL",
+   "pattern": "PostgreSQL[ /]?([0-9][0-9.]*)",
+   "service": "PostgreSQL",
+   "priority": 92,
+   "version_group": 1,
+   "ports": [
+    5432
+   ]
+  },
+  {
+   "name": "MongoDB",
+   "pattern": "MongoDB|mongo server",
+   "service": "MongoDB",
+   "priority": 90,
+   "ports": [
+    27017
+   ]
+  },
+  {
+   "name": "Elasticsearch",
+   "pattern": "Elasticsearch|\"cluster_name\"\\s*:",
+   "service": "Elasticsearch",
+   "priority": 92,
+   "ports": [
+    9200
+   ]
+  },
+  {
+   "name": "CouchDB",
+   "pattern": "CouchDB/([0-9.]*)",
+   "service": "CouchDB",
+   "priority": 90,
+   "version_group": 1,
+   "ports": [
+    5984
+   ]
+  },
+  {
+   "name": "InfluxDB",
+   "pattern": "InfluxDB",
+   "service": "InfluxDB",
+   "priority": 88,
+   "ports": [
+    8086
+   ]
+  },
+  {
+   "name": "ClickHouse",
+   "pattern": "ClickHouse",
+   "service": "ClickHouse",
+   "priority": 88,
+   "ports": [
+    8123,
+    9000
+   ]
+  },
+  {
+   "name": "Cassandra",
+   "pattern": "Cassandra",
+   "service": "Cassandra",
+   "priority": 85,
+   "ports": [
+    9042
+   ]
+  },
+  {
+   "name": "Neo4j",
+   "pattern": "Neo4j",
+   "service": "Neo4j",
+   "priority": 85
+  },
+  {
+   "name": "Memcached",
+   "pattern": "memcached [0-9]|STAT version",
+   "service": "Memcached",
+   "priority": 90,
+   "ports": [
+    11211
+   ]
+  },
+  {
+   "name": "RabbitMQ",
+   "pattern": "RabbitMQ",
+   "service": "RabbitMQ",
+   "priority": 88,
+   "ports": [
+    5672,
+    15672
+   ]
+  },
+  {
+   "name": "Kafka",
+   "pattern": "kafka|Apache Kafka",
+   "service": "Kafka",
+   "priority": 85,
+   "ports": [
+    9092
+   ]
+  },
+  {
+   "name": "ZooKeeper",
+   "pattern": "ZooKeeper",
+   "service": "ZooKeeper",
+   "priority": 85,
+   "ports": [
+    2181
+   ]
+  },
+  {
+   "name": "Docker API",
+   "pattern": "Docker/([0-9.]+)|\\\"ApiVersion\\\"",
+   "service": "Docker",
+   "priority": 92,
+   "version_group": 1,
+   "ports": [
+    2375,
+    2376
+   ]
+  },
+  {
+   "name": "Kubernetes",
+   "pattern": "Kubernetes|k8s",
+   "service": "Kubernetes",
+   "priority": 88,
+   "ports": [
+    6443,
+    10250
+   ]
+  },
+  {
+   "name": "Consul",
+   "pattern": "Consul",
+   "service": "Consul",
+   "priority": 85,
+   "ports": [
+    8500
+   ]
+  },
+  {
+   "name": "Vault",
+   "pattern": "Vault|HashiCorp",
+   "service": "Vault",
+   "priority": 85,
+   "ports": [
+    8200
+   ]
+  },
+  {
+   "name": "MSSQL",
+   "pattern": "SQL Server|MSSQL|Microsoft SQL",
+   "service": "MSSQL",
+   "priority": 88,
+   "ports": [
+    1433
+   ]
+  },
+  {
+   "name": "Oracle DB",
+   "pattern": "Oracle Database|Oracle HTTP|TNS",
+   "service": "Oracle-DB",
+   "priority": 82,
+   "ports": [
+    1521
+   ]
+  },
+  {
+   "name": "DB2",
+   "pattern": "DB2|SQL0104N",
+   "service": "DB2",
+   "priority": 82,
+   "ports": [
+    50000
+   ]
+  },
+  {
+   "name": "MinIO",
+   "pattern": "MinIO|minio",
+   "service": "MinIO",
+   "priority": 88,
+   "ports": [
+    9000
+   ]
+  },
+  {
+   "name": "S3 兼容",
+   "pattern": "<ListAllMyBucketsResult|\"Buckets\"\\s*:",
+   "service": "S3",
+   "priority": 82
+  },
+  {
+   "name": "VNC RFB",
+   "pattern": "^RFB 00[34]\\.[0-9]",
+   "service": "VNC",
+   "priority": 95,
+   "ports": [
+    5900
+   ]
+  },
+  {
+   "name": "TightVNC",
+   "pattern": "TightVNC",
+   "service": "VNC",
+   "priority": 92
+  },
+  {
+   "name": "RealVNC",
+   "pattern": "RealVNC",
+   "service": "VNC",
+   "priority": 92
+  },
+  {
+   "name": "RDP",
+   "pattern": "RDP|Remote Desktop Protocol",
+   "service": "RDP",
+   "priority": 80,
+   "ports": [
+    3389
+   ]
+  },
+  {
+   "name": "SMB",
+   "pattern": "SMB|Microsoft Windows Network",
+   "service": "SMB",
+   "priority": 78,
+   "ports": [
+    445
+   ]
+  },
+  {
+   "name": "SNMP",
+   "pattern": "SNMP|public",
+   "service": "SNMP",
+   "priority": 45,
+   "ports": [
+    161
+   ]
+  },
+  {
+   "name": "NTP",
+   "pattern": "NTP|Network Time Protocol",
+   "service": "NTP",
+   "priority": 45,
+   "ports": [
+    123
+   ]
+  },
+  {
+   "name": "BIND DNS",
+   "pattern": "BIND [0-9]|ISC BIND",
+   "service": "DNS",
+   "priority": 88,
+   "ports": [
+    53
+   ]
+  },
+  {
+   "name": "dnsmasq",
+   "pattern": "dnsmasq",
+   "service": "DNS",
+   "priority": 85,
+   "ports": [
+    53
+   ]
+  },
+  {
+   "name": "OpenLDAP",
+   "pattern": "OpenLDAP|ldap",
+   "service": "LDAP",
+   "priority": 78,
+   "ports": [
+    389,
+    636
+   ]
+  },
+  {
+   "name": "SIP",
+   "pattern": "SIP/2[.]0|Asterisk|FreeSWITCH",
+   "service": "SIP",
+   "priority": 88,
+   "ports": [
+    5060
+   ]
+  },
+  {
+   "name": "MQTT mosquitto",
+   "pattern": "mosquitto",
+   "service": "MQTT",
+   "priority": 88,
+   "ports": [
+    1883
+   ]
+  },
+  {
+   "name": "MQTT EMQX",
+   "pattern": "EMQX|EMQ X",
+   "service": "MQTT",
+   "priority": 88,
+   "ports": [
+    1883
+   ]
+  },
+  {
+   "name": "MQTT通用",
+   "pattern": "MQTT",
+   "service": "MQTT",
+   "priority": 75,
+   "ports": [
+    1883
+   ]
+  },
+  {
+   "name": "Syslog",
+   "pattern": "syslog",
+   "service": "Syslog",
+   "priority": 60,
+   "ports": [
+    514
+   ]
+  },
+  {
+   "name": "rsync",
+   "pattern": "@RSYNCD:",
+   "service": "rsync",
+   "priority": 90,
+   "ports": [
+    873
+   ]
+  }
+ ],
+ "ports": {
+  "7001": "WebLogic",
+  "7002": "WebLogic-SSL",
+  "8006": "Proxmox",
+  "8086": "InfluxDB",
+  "8123": "ClickHouse",
+  "8500": "Consul",
+  "8848": "Nacos",
+  "9000": "MinIO/PHP-FPM",
+  "9042": "Cassandra",
+  "9060": "WebSphere",
+  "9080": "WebSphere",
+  "9990": "WildFly",
+  "10051": "Zabbix",
+  "10250": "Kubernetes",
+  "10443": "FortiOS",
+  "15672": "RabbitMQ-Mgmt",
+  "1883": "MQTT",
+  "2181": "ZooKeeper",
+  "2375": "Docker",
+  "2376": "Docker-SSL",
+  "27017": "MongoDB",
+  "5000": "HTTP-Alt",
+  "5001": "HTTPS-Alt",
+  "5601": "Kibana",
+  "5672": "RabbitMQ",
+  "5900": "VNC",
+  "6379": "Redis",
+  "8080": "HTTP-Proxy",
+  "8443": "HTTPS-Alt",
+  "9092": "Kafka",
+  "9200": "Elasticsearch",
+  "11211": "Memcached",
+  "623": "IPMI",
+  "8291": "RouterOS",
+  "902": "VMware",
+  "5984": "CouchDB"
+ }
+}

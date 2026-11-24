@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetDiag 网络诊断工具</title>
+<style>
+  :root{
+    --bg:#f4f9f6; --panel:#ffffff; --ink:#1f2b26; --sub:#6f8179; --line:#e1ece5;
+    --brand:#12a06a; --brand2:#0c8257; --brand-soft:#e7f6ee; --brand-line:#c6e9d6;
+    --ok:#16a34a; --warn:#d97706; --bad:#e0453f;
+    --shadow:0 1px 2px rgba(20,60,45,.04),0 10px 30px rgba(30,90,65,.06);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;
+    background-image:radial-gradient(900px 380px at 12% -8%,rgba(18,160,106,.09),transparent 60%),
+      radial-gradient(760px 340px at 92% -10%,rgba(80,190,150,.08),transparent 60%)}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 26px 50px}
+  .tabs{display:inline-flex;gap:4px;margin-bottom:20px;background:#e7efe9;padding:4px;border-radius:12px}
+  .tab{padding:9px 22px;border-radius:9px;border:none;background:transparent;
+    cursor:pointer;font-weight:600;color:var(--sub);transition:.15s;user-select:none;font-size:13.5px}
+  .tab:hover{color:var(--brand)}
+  .tab.active{background:var(--panel);color:var(--brand);
+    box-shadow:0 1px 5px rgba(30,80,55,.14)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    box-shadow:var(--shadow);padding:26px 28px;margin-bottom:18px}
+  .panel h2{font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+  .panel h2 .ico{font-size:18px}
+  .panel .desc{color:var(--sub);font-size:12.5px;margin-bottom:20px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
+  label.field{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:600;color:var(--sub)}
+  input,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;
+    font-size:14px;color:var(--ink);background:#fff;outline:none;transition:.15s;font-family:inherit}
+  input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(18,160,106,.13)}
+  input::placeholder{color:#a7b4ad}
+  .full{grid-column:1/-1}
+  .actions{display:flex;align-items:center;gap:12px;margin-top:20px}
+  button.run{background:linear-gradient(135deg,#2ebd87,#0e8b5c);color:#fff;border:none;padding:11px 26px;border-radius:9px;
+    font-size:14px;font-weight:600;cursor:pointer;transition:.15s;
+    box-shadow:0 4px 14px rgba(18,160,106,.3)}
+  button.run:hover{filter:brightness(1.06);box-shadow:0 6px 18px rgba(18,160,106,.4)}
+  button.run:disabled{background:#b8ddc9;cursor:not-allowed;box-shadow:none;filter:none}
+  button.ghost{background:#fff;color:var(--sub);border:1px solid var(--line);padding:11px 18px;
+    border-radius:9px;font-size:14px;cursor:pointer;transition:.15s}
+  button.ghost:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
+  .hint{color:var(--sub);font-size:12px;margin-left:auto}
+  .progress-wrap{margin-top:18px;display:none}
+  .progress-head{display:flex;justify-content:space-between;font-size:12.5px;color:var(--sub);margin-bottom:7px}
+  .bar{height:8px;background:#e9f2ec;border-radius:6px;overflow:hidden}
+  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#2ebd87,#7fdbb0);
+    border-radius:6px;transition:width .15s}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px;margin-top:18px}
+  .stat{background:#f7fbf8;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat .k{font-size:12px;color:var(--sub)}
+  .stat .v{font-size:24px;font-weight:700;margin-top:3px}
+  .stat .v.ok{color:var(--ok)} .stat .v.bad{color:var(--bad)} .stat .v.brand{color:var(--brand)}
+  .result-card{margin-top:20px}
+  .result-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .result-head h3{font-size:14px}
+  .badge{font-size:12px;padding:3px 10px;border-radius:20px;background:var(--brand-soft);color:var(--brand);font-weight:700}
+  .toolbar{display:flex;gap:8px;align-items:center}
+  .toolbar input{width:210px;padding:7px 11px;font-size:12.5px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{text-align:left;padding:11px 12px;background:#f7fbf8;color:var(--sub);font-weight:600;
+    font-size:12px;border-bottom:1px solid var(--line);position:sticky;top:0;cursor:pointer;user-select:none}
+  thead th:hover{background:var(--brand-soft)}
+  tbody td{padding:10px 12px;border-bottom:1px solid #eef3ef;vertical-align:middle}
+  tbody tr:hover{background:#fafdfb}
+  .pill{display:inline-block;padding:2px 9px;border-radius:6px;font-size:12px;font-weight:600}
+  .pill.open{background:#dcfce7;color:#15803d}
+  .pill.alive{background:#dcfce7;color:#15803d}
+  .pill.dead{background:#fee2e2;color:#b91c1c}
+  .pill.filtered{background:#fef3c7;color:#b45309}
+  .pill.closed{background:#f1f5f9;color:#64748b}
+  .svc{font-weight:600;color:var(--brand)}
+  .banner{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11.5px;color:var(--sub);
+    max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .empty{text-align:center;padding:44px 20px;color:var(--sub)}
+  .empty .big{font-size:38px;opacity:.35;margin-bottom:10px}
+  .toast{position:fixed;top:20px;right:20px;background:#fff;border:1px solid var(--line);
+    box-shadow:var(--shadow);padding:13px 18px;border-radius:11px;font-size:13px;
+    transform:translateX(140%);transition:.25s;z-index:99;max-width:360px}
+  .toast.err{border-left:4px solid var(--bad)}
+  .toast.show{transform:translateX(0)}
+  .hidden{display:none!important}
+  .foot{text-align:center;color:var(--sub);font-size:12px;margin-top:30px}
+  code{background:var(--brand-soft);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--brand)}
+  button.stop{background:#fff;color:var(--bad);border:1px solid #f6cfcd}
+  button.stop:hover:not(:disabled){background:#fff3f2;border-color:var(--bad)}
+  button.stop:disabled{opacity:.45;cursor:not-allowed}
+  .ip-link{color:var(--brand);cursor:pointer;border-bottom:1px dashed var(--brand)}
+  .ip-link:hover{background:var(--brand-soft)}
+  .net-row{display:flex;gap:10px;align-items:center;margin-top:2px}
+  .net-row select{max-width:340px;padding:8px 10px;font-size:13px}
+  .port-presets{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--sub)}
+  .port-presets button{padding:6px 12px;font-size:12px;border:1px solid var(--line);background:#fff;
+    color:var(--sub);border-radius:7px;cursor:pointer;transition:.15s}
+  .port-presets button:hover{border-color:var(--brand);color:var(--brand)}
+  .port-presets button.sel{background:var(--brand-soft);border-color:var(--brand-line);color:var(--brand)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab active" data-tab="ping">📡 Ping 诊断</div>
+    <div class="tab" data-tab="scan">🔍 端口扫描</div>
+  </div>
+
+  <!-- Ping 面板 -->
+  <div id="pingPanel">
+    <div class="panel">
+      <h2><span class="ico">📡</span>批量 Ping 诊断</h2>
+      <p class="desc">支持单个 IP、域名、CIDR 网段（如 192.168.1.0/24）和范围（如 192.168.1.1-50），可逗号/换行混用。</p>
+      <div class="grid">
+        <label class="field full">目标主机 / 网段
+          <input id="pingTargets" placeholder="例：192.168.1.1, 8.8.8.8, example.com, 10.0.0.1-20" value="127.0.0.1, 192.168.1.1">
+        </label>
+        <div class="net-row full">
+          <button class="ghost" id="netDetect" style="padding:8px 14px;font-size:12.5px">⟳ 识别本机网卡</button>
+          <select id="netSelect" class="hidden"><option value="">选择本机网段填入...</option></select>
+          <span class="hint" id="netHint" style="margin-left:0"></span>
+        </div>
+        <label class="field">每主机包数<input type="number" id="pingCount" value="4" min="1" max="20"></label>
+        <label class="field">超时(ms)<input type="number" id="pingTimeout" value="1000" min="100" step="100"></label>
+        <label class="field">并发数<input type="number" id="pingWorkers" value="32" min="1" max="256"></label>
+      </div>
+      <div class="actions">
+        <button class="run" id="pingRun">开始 Ping</button>
+        <button class="stop" id="pingStop" disabled>停止</button>
+        <button class="ghost" id="pingClear">清空结果</button>
+        <span class="hint">结果实时刷新 · 点击表头排序 · 点击 IP 扫描端口</span>
+      </div>
+      <div class="progress-wrap" id="pingProgress">
+        <div class="progress-head"><span id="pingPTxt">扫描中...</span><span id="pingPPct">0%</span></div>
+        <div class="bar"><i id="pingBar"></i></div>
+      </div>
+    </div>
+    <div class="panel" id="pingStatsPanel">
+      <h2><span class="ico">📊</span>统计概览</h2>
+      <div class="stats" id="pingStats"></div>
+      <div class="result-card" id="pingResultCard">
+        <div class="result-head">
+          <h3>主机列表 <span class="badge" id="pingBadge">0</span></h3>
+          <div class="toolbar"><input id="pingFilter" placeholder="🔎 过滤主机..."></div>
+        </div>
+        <div id="pingTableWrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 扫描面板 -->
+  <div id="scanPanel" class="hidden">
+    <div class="panel">
+      <h2><span class="ico">🔍</span>端口扫描与协议识别</h2>
+      <p class="desc">TCP connect 扫描 + UDP 探测。目标与端口均支持列表、范围与网段；开放端口自动识别通用协议并抓取横幅。</p>
+      <div class="grid">
+        <label class="field full">目标主机 / 网段
+          <input id="scanTargets" placeholder="例：192.168.1.1, 10.0.0.0/24, example.com" value="127.0.0.1">
+        </label>
+        <label class="field full">端口范围
+          <input id="scanPorts" placeholder="例：22,80,443 或 1-1024 或 21,22,80,8000-8080" value="21,22,80,135,139,443,445,3306,8080">
+        </label>
+        <div class="port-presets full">
+          <span>快捷端口：</span>
+          <button type="button" data-ports="common">常规端口</button>
+          <button type="button" data-ports="all">全部端口 (1-65535)</button>
+          <button type="button" data-ports="web">Web 常用</button>
+          <span id="portPresetHint"></span>
+        </div>
+        <label class="field">协议
+          <select id="scanProto"><option value="tcp">TCP</option><option value="udp">UDP</option></select>
+        </label>
+        <label class="field">超时(秒)<input type="number" id="scanTimeout" value="0.6" min="0.1" max="10" step="0.1"></label>
+        <label class="field">并发数<input type="number" id="scanWorkers" value="100" min="1" max="500"></label>
+        <label class="field" style="justify-content:end">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600">
+            <input type="checkbox" id="scanDetect" checked style="width:auto"> 协议识别(抓取横幅)
+          </label>
+        </label>
+      </div>
+      <div class="actions">
+        <button class="run" id="scanRun">开始扫描</button>
+        <button class="stop" id="scanStop" disabled>停止</button>
+        <button class="ghost" id="scanClear">清空结果</button>
+        <span class="hint">UDP 无连接：无响应端口标记为 open|filtered</span>
+      </div>
+      <div class="progress-wrap" id="scanProgress">
+        <div class="progress-head"><span id="scanPTxt">扫描中...</span><span id="scanPPct">0%</span></div>
+        <div class="bar"><i id="scanBar"></i></div>
+      </div>
+    </div>
+    <div class="panel" id="scanStatsPanel">
+      <h2><span class="ico">📊</span>扫描概览</h2>
+      <div class="stats" id="scanStats"></div>
+      <div class="result-card" id="scanResultCard">
+        <div class="result-head">
+          <h3>开放端口 <span class="badge" id="scanBadge">0</span></h3>
+          <div class="toolbar"><input id="scanFilter" placeholder="🔎 过滤端口/服务..."></div>
+        </div>
+        <div id="scanTableWrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">NetDiag v1.0 · 本地运行，所有诊断数据不会上传 · 协议识别基于端口映射与横幅探测，仅供网络排查参考</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let ws = null, running = false;
+let pingData = [], scanData = [];
+let sortState = {ping:{key:'host',dir:1}, scan:{key:'port',dir:1}};
+
+/* ---------- 连接 ---------- */
+function connect(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => { if (pendingNetDetect) detectNets(); };
+  ws.onclose = () => { setTimeout(connect, 1500); };
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'error'){ toast(m.message, true); setRunning(false); return; }
+    if (m.type === 'stopping'){ return; }
+    if (m.type === 'start'){ onStart(m); return; }
+    if (m.type === 'ping_result' || m.type === 'scan_result' || m.type === 'progress'){ onProgress(m); return; }
+    if (m.type === 'done'){ onDone(m); }
+  };
+}
+
+let currentTaskId = null;
+function onStart(m){
+  currentTaskId = m.task_id || null;
+  if (m.task === 'ping'){ pingData = []; $('pingResultCard').classList.remove('hidden'); updateProgress('ping',0,m.total); }
+  else { scanData = []; $('scanResultCard').classList.remove('hidden'); updateProgress('scan',0,m.total); }
+}
+function onProgress(m){
+  if (m.task === undefined){
+    const isPing = false;
+  }
+  if (m.type === 'ping_result'){
+    pingData.push(m.data); updateProgress('ping', m.done, m.total); renderPing();
+  } else if (m.type === 'scan_result'){
+    scanData.push(m.data); updateProgress('scan', m.done, m.total); renderScan();
+  } else if (m.type === 'progress'){
+    updateProgress('scan', m.done, m.total);
+  }
+}
+function onDone(m){
+  if (m.task_id && currentTaskId && m.task_id !== currentTaskId) return;  // 忽略被取代的旧任务收尾
+  setRunning(false);
+  if (!m.cancelled){
+    if (m.task === 'ping'){ toast(`Ping 完成：${m.summary.alive} 台在线 / ${m.summary.total} 台`); }
+    else { toast(`扫描完成：发现 ${m.open_count} 个开放端口`); }
+  }
+  if (m.task === 'ping'){ renderPing(); if (m.summary) renderPingStats(m.summary); }
+  else { renderScan(); renderScanStats(); }
+  if (!m.cancelled) updateProgress(m.task, 1, 1);
+}
+function updateProgress(kind, done, total){
+  const pct = total ? Math.round(done/total*100) : 100;
+  $(kind+'Bar').style.width = pct+'%';
+  $(kind+'PPct').textContent = pct+'%';
+  $(kind+'PTxt').textContent = `处理中 ${done} / ${total}（${pct}%）`;
+}
+function setRunning(v){
+  running = v;
+  $('pingRun').disabled = v; $('scanRun').disabled = v;
+  $('pingStop').disabled = !(v && activeTab==='ping');
+  $('scanStop').disabled = !(v && activeTab==='scan');
+  $('pingRun').textContent = v && activeTab==='ping' ? '运行中...' : '开始 Ping';
+  $('scanRun').textContent = v && activeTab==='scan' ? '扫描中...' : '开始扫描';
+  $('pingProgress').style.display = (v && activeTab==='ping') ? 'block':'none';
+  $('scanProgress').style.display = (v && activeTab==='scan') ? 'block':'none';
+}
+function toast(msg, err){ const t=$('toast'); t.textContent=msg; t.className='toast show'+(err?' err':''); clearTimeout(t._t); t._t=setTimeout(()=>t.className='toast',3200); }
+
+/* ---------- 操作 ---------- */
+function send(action, payload){
+  if (!ws || ws.readyState !== WebSocket.OPEN){ toast('服务未连接，请稍候', true); return; }
+  setRunning(true);
+  ws.send(JSON.stringify({action, ...payload}));
+}
+$('pingRun').onclick = () => send('ping', {
+  targets:$('pingTargets').value, count:+$('pingCount').value,
+  timeout:+$('pingTimeout').value, workers:+$('pingWorkers').value
+});
+$('scanRun').onclick = () => send('scan', {
+  targets:$('scanTargets').value, ports:$('scanPorts').value,
+  protocol:$('scanProto').value, timeout:+$('scanTimeout').value,
+  workers:+$('scanWorkers').value, detect:$('scanDetect').checked
+});
+$('pingClear').onclick = () => { pingData=[]; renderPing(); $('pingStats').innerHTML=''; $('pingResultCard').classList.add('hidden'); };
+$('scanClear').onclick = () => { scanData=[]; renderScan(); $('scanStats').innerHTML=''; $('scanResultCard').classList.add('hidden'); };
+/* ---------- 停止：send 不切换运行态，单独处理 ---------- */
+function stopTask(){
+  if (!ws || ws.readyState !== WebSocket.OPEN){ toast('服务未连接，请稍候', true); return; }
+  ws.send(JSON.stringify({action:'stop'}));
+}
+$('pingStop').onclick = stopTask;
+$('scanStop').onclick = stopTask;
+
+/* ---------- 本机网卡网段识别 ---------- */
+let pendingNetDetect = false;
+let netList = [];
+async function detectNets(){
+  if (!navigator.onLine && !ws) return;
+  pendingNetDetect = false;
+  try {
+    const resp = await fetch('/api/netifaces');
+    const data = await resp.json();
+    netList = data.networks || [];
+    const sel = $('netSelect');
+    sel.innerHTML = '<option value="">选择本机网段填入...</option>';
+    netList.forEach((n,i) => {
+      const opt = document.createElement('option');
+      opt.value = n.cidr;
+      opt.textContent = `${n.name}  ${n.ip} → ${n.cidr}`;
+      sel.appendChild(opt);
+    });
+    sel.classList.remove('hidden');
+    $('netHint').textContent = netList.length ? `发现 ${netList.length} 个网段` : '未发现活动网卡';
+    if (netList.length) toast(`发现 ${netList.length} 个本机网段，请选择填入`);
+  } catch(e){ $('netHint').textContent = '识别失败'; }
+}
+$('netDetect').onclick = () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN){ pendingNetDetect = true; toast('服务连接中，稍后自动识别'); return; }
+  detectNets();
+};
+$('netSelect').onchange = e => {
+  if (!e.target.value) return;
+  $('pingTargets').value = e.target.value;
+  $('scanTargets').value = e.target.value;
+  toast(`已填入网段 ${e.target.value}`);
+};
+
+/* ---------- 端口快捷预设 ---------- */
+const PORT_PRESETS = {
+  common: '21,22,23,25,53,80,110,135,139,143,443,445,1433,1521,3306,3389,5432,5900,6379,8080,8443,9200,27017',
+  all: '1-65535',
+  web: '80,443,8080,8000,8008,8443,8888,3000,5000,5001,7001,7002,9000',
+};
+document.querySelectorAll('.port-presets button').forEach(b => b.onclick = () => {
+  const key = b.dataset.ports;
+  $('scanPorts').value = PORT_PRESETS[key] || '';
+  document.querySelectorAll('.port-presets button').forEach(x => x.classList.toggle('sel', x===b));
+  $('portPresetHint').textContent = key==='all' ? '⚠ 全端口扫描耗时较长，建议减小并发外的超时' : '';
+});
+
+/* ---------- 标签页 ---------- */
+let activeTab = 'ping';
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  t.classList.add('active'); activeTab = t.dataset.tab;
+  $('pingPanel').classList.toggle('hidden', activeTab!=='ping');
+  $('scanPanel').classList.toggle('hidden', activeTab!=='scan');
+  setRunning(running);
+});
+$('pingFilter').oninput = renderPing;
+$('scanFilter').oninput = renderScan;
+
+/* ---------- 渲染 ---------- */
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function sortRows(rows, st){
+  return [...rows].sort((a,b)=>{
+    let va=a[st.key], vb=b[st.key];
+    if (typeof va==='number'||typeof vb==='number'){ va=+va||0; vb=+vb||0; return (va-vb)*st.dir; }
+    return String(va??'').localeCompare(String(vb??''),undefined,{numeric:true})*st.dir;
+  });
+}
+function th(label, key, st, kind){ return `<th data-k="${key}" data-t="${kind}">${label}${st.key===key?(st.dir>0?' ▲':' ▼'):''}</th>`; }
+function bindSort(kind){
+  document.querySelectorAll(`#${kind}TableWrap th`).forEach(h => h.onclick = () => {
+    const st=sortState[kind], k=h.dataset.k;
+    st.dir = st.key===k ? -st.dir : 1; st.key=k;
+    kind==='ping'?renderPing():renderScan();
+  });
+}
+// ping 结果 IP 点击 -> 跳转到端口扫描并填入目标
+$('pingTableWrap').addEventListener('click', e => {
+  const link = e.target.closest('.ip-link');
+  if (!link) return;
+  const ip = link.dataset.ip;
+  $('scanTargets').value = ip;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.dataset.tab==='scan'));
+  activeTab = 'scan';
+  $('pingPanel').classList.add('hidden');
+  $('scanPanel').classList.remove('hidden');
+  setRunning(running);
+  toast(`已填入 ${ip}，设置端口后开始扫描`);
+  $('scanPorts').focus();
+});
+function renderPing(){
+  const q = $('pingFilter').value.toLowerCase();
+  let rows = pingData.filter(r => !q || r.host.toLowerCase().includes(q));
+  rows = sortRows(rows, sortState.ping);
+  $('pingBadge').textContent = pingData.length;
+  const st = sortState.ping;
+  let h = '<table><thead><tr>';
+  h += th('主机','host',st,'ping')+th('状态','alive',st,'ping')+th('IP','resolved_ip',st,'ping')
+     + th('丢包率','loss',st,'ping')+th('最小(ms)','min_ms',st,'ping')
+     + th('平均(ms)','avg_ms',st,'ping')+th('最大(ms)','max_ms',st,'ping');
+  h += '</tr></thead><tbody>';
+  if (!rows.length) h += '<tr><td colspan="7"><div class="empty"><div class="big">📡</div>暂无 Ping 结果</div></td></tr>';
+  rows.forEach(r=>{
+    const ip = r.resolved_ip || r.host;
+    const clickable = r.alive ? `<span class="ip-link" data-ip="${esc(ip)}" title="点击扫描此 IP 的端口">${esc(r.host)}</span>` : esc(r.host);
+    h += `<tr><td>${clickable}</td>`
+      + `<td><span class="pill ${r.alive?'alive':'dead'}">${r.alive?'在线':'离线'}</span></td>`
+      + `<td>${esc(r.resolved_ip||'-')}</td>`
+      + `<td>${r.loss??'-'}%</td><td>${r.min_ms??'-'}</td><td>${r.avg_ms??'-'}</td><td>${r.max_ms??'-'}</td></tr>`;
+  });
+  h += '</tbody></table>';
+  $('pingTableWrap').innerHTML = h; bindSort('ping');
+}
+function renderPingStats(s){
+  if (!s) return;
+  $('pingStats').innerHTML = `
+    <div class="stat"><div class="k">目标总数</div><div class="v brand">${s.total}</div></div>
+    <div class="stat"><div class="k">在线主机</div><div class="v ok">${s.alive}</div></div>
+    <div class="stat"><div class="k">离线主机</div><div class="v bad">${s.dead}</div></div>
+    <div class="stat"><div class="k">在线率</div><div class="v">${s.total?Math.round(s.alive/s.total*100):0}%</div></div>
+    <div class="stat"><div class="k">平均延迟</div><div class="v">${s.avg_latency_ms??'-'}<span style="font-size:13px">ms</span></div></div>`;
+}
+function renderScan(){
+  const q = $('scanFilter').value.toLowerCase();
+  let rows = scanData.filter(r => !q ||
+    String(r.host).toLowerCase().includes(q) || String(r.port).includes(q) ||
+    String(r.service).toLowerCase().includes(q) || String(r.banner).toLowerCase().includes(q));
+  rows = sortRows(rows, sortState.scan);
+  $('scanBadge').textContent = scanData.length;
+  const st = sortState.scan;
+  let h = '<table><thead><tr>';
+  h += th('主机','host',st,'scan')+th('端口','port',st,'scan')+th('协议','protocol',st,'scan')
+     + th('状态','state',st,'scan')+th('服务','service',st,'scan')+th('横幅 / 版本','banner',st,'scan');
+  h += '</tr></thead><tbody>';
+  if (!rows.length) h += '<tr><td colspan="6"><div class="empty"><div class="big">🔍</div>暂无开放端口</div></td></tr>';
+  rows.forEach(r=>{
+    const state = r.state==='open'?'open':(r.state.includes('filtered')?'filtered':'closed');
+    h += `<tr><td>${esc(r.host)}</td><td><b>${r.port}</b></td><td>${esc(r.protocol.toUpperCase())}</td>`
+      + `<td><span class="pill ${state}">${esc(r.state)}</span></td>`
+      + `<td><span class="svc">${esc(r.service||'-')}</span></td>`
+      + `<td class="banner" title="${esc(r.banner)}">${esc(r.banner||'-')}</td></tr>`;
+  });
+  h += '</tbody></table>';
+  $('scanTableWrap').innerHTML = h; bindSort('scan');
+}
+function renderScanStats(){
+  const tcp = scanData.filter(r=>r.protocol==='tcp').length;
+  const udp = scanData.filter(r=>r.protocol==='udp').length;
+  const hosts = new Set(scanData.map(r=>r.host)).size;
+  const svcs = new Set(scanData.map(r=>r.service).filter(Boolean)).size;
+  $('scanStats').innerHTML = `
+    <div class="stat"><div class="k">开放端口</div><div class="v ok">${scanData.length}</div></div>
+    <div class="stat"><div class="k">TCP 开放</div><div class="v brand">${tcp}</div></div>
+    <div class="stat"><div class="k">UDP 开放</div><div class="v brand">${udp}</div></div>
+    <div class="stat"><div class="k">存活主机</div><div class="v">${hosts}</div></div>
+    <div class="stat"><div class="k">识别服务</div><div class="v">${svcs}</div></div>`;
+}
+
+connect();
+</script>
+</body>
+</html>

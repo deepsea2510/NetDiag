@@ -1,0 +1,37 @@
+# ---- 构建与分发产物（发行包改走 GitHub Releases，不进仓库）----
+build/
+dist/
+archive/
+
+# ---- 本地测试探针 / 临时验证脚本 ----
+_probe/
+
+# ---- 历史版本快照目录（v2.0 ~ v10.6，含旧打包产物）----
+v*/
+
+# ---- 内部评估文档（不公开；本地保留）----
+docs/漏洞扫描功能评估报告.*
+
+# ---- 根目录截图（README 未引用，归档用）----
+/Ping_原生ICMP.png
+/端口扫描_高并发.png
+
+# ---- 运行时产物 ----
+__pycache__/
+*.py[cod]
+*.db
+*.log
+
+# ---- 二进制与压缩包（一律走 Releases）----
+*.exe
+*.zip
+*.msi
+
+# ---- 开发环境与本地配置 ----
+.venv/
+venv/
+.idea/
+.vscode/
+.workbuddy/
+Thumbs.db
+desktop.ini

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "_comment": "NetDiag WMI 外挂预设示例。与内置预设同名的项会覆盖内置项；可直接复制本文件后增删条目。字段：name 名称 / wql 查询语句 / namespace 命名空间 / description 说明。",
+  "presets": [
+    {
+      "name": "示例-本地磁盘容量",
+      "wql": "SELECT DeviceID, VolumeName, Size, FreeSpace FROM Win32_LogicalDisk WHERE DriveType = 3",
+      "namespace": "root\\cimv2",
+      "description": "只看本地固定磁盘（DriveType=3）的容量与剩余空间",
+      "_comment": "标准 WQL：DriveType 3 表示本地磁盘"
+    },
+    {
+      "name": "示例-自动启动服务",
+      "wql": "SELECT DisplayName, State, StartMode FROM Win32_Service WHERE StartMode = 'Auto'",
+      "namespace": "root\\cimv2",
+      "description": "列出所有自动启动的服务及其运行状态",
+      "_comment": "字符串字面量用单引号；引擎会将其翻倍后放入 PowerShell 单引号字符串"
+    },
+    {
+      "name": "示例-已启用网卡",
+      "wql": "SELECT Description, IPAddress, MACAddress FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = True",
+      "namespace": "root\\cimv2",
+      "description": "只看已启用 TCP/IP 的网卡描述、IP 与 MAC",
+      "_comment": "IPEnabled 为布尔值，WQL 中用 True / False"
+    }
+  ]
+}
