@@ -197,12 +197,17 @@ def is_windows() -> bool:
 
 
 def check_powershell() -> tuple[bool, str]:
-    """检查 PowerShell 是否可用，返回 (是否可用, 中文说明)。"""
+    """检查 PowerShell 是否可用，返回 (是否可用, 说明)。"""
+    try:
+        from app.i18n import T as _t
+    except Exception:
+        def _t(s: str) -> str:
+            return s
     for name in ("powershell.exe", "powershell", "pwsh"):
         found = shutil.which(name)
         if found:
-            return True, f"PowerShell 可用：{found}"
-    return False, "PowerShell 不可用：未在 PATH 中找到 powershell/pwsh，请安装或检查环境变量。"
+            return True, _t("PowerShell 可用：{}").format(found)
+    return False, _t("PowerShell 不可用：未在 PATH 中找到 powershell/pwsh，请安装或检查环境变量。")
 
 
 def presets_path() -> Path:

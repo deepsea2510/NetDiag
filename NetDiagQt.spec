@@ -30,7 +30,7 @@ a = Analysis(
         # SSH 弱口令探测：paramiko 及其加密后端（PyInstaller 的 hook 有时会漏）
         "paramiko", "bcrypt", "nacl",
         "cryptography", "cryptography.hazmat.backends.openssl",
-        # v10.12 Syslog 外部数据库驱动（SQLite 内置，其余按需动态导入）
+        # v10.13 Syslog 外部数据库驱动（SQLite 内置，其余按需动态导入）
         "pymysql", "psycopg2", "pyodbc", "oracledb",
     ],
     hookspath=[],

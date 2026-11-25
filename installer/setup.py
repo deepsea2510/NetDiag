@@ -1,8 +1,8 @@
-"""NetDiag v10.12 安装程序（纯 Win32 界面，单文件 exe）。
+"""NetDiag v10.13 安装程序（纯 Win32 界面，单文件 exe）。
 
 用法：
-    NetDiagSetup-10.12.exe                      图形界面安装（默认 C:\\Program Files\\NetDiag）
-    NetDiagSetup-10.12.exe /S /D=D:\\Tools\\NetDiag  静默安装到指定目录
+    NetDiagSetup-10.13.exe                      图形界面安装（默认 C:\\Program Files\\NetDiag）
+    NetDiagSetup-10.13.exe /S /D=D:\\Tools\\NetDiag  静默安装到指定目录
 
 参数：/S 静默  /D=目录  /NODESKTOP  /NOSTARTMENU  /NORUN
 内用：/ELEVATED 已提权  /AUTO 提权后自动继续  /DESKTOP=路径  /STARTMENU=路径
@@ -22,12 +22,15 @@ from ctypes import wintypes as wt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import win32ui as ui  # noqa: E402
+import win_lang  # noqa: E402
+from win_lang import T as L  # noqa: E402
 
-APP_NAME = "NetDiag 网络诊断工具"
-VERSION = "10.12"
+APP_NAME = win_lang.app_name()
+VERSION = "10.13.5"
+SETUP_TITLE = L("setup_title", app=APP_NAME, ver=VERSION)
 EXE_NAME = "NetDiag.exe"
 UNINST_NAME = "uninstall.exe"
-LNK_NAME = "NetDiag 网络诊断工具"
+LNK_NAME = win_lang.lnk_name()
 REG_APP = r"Software\NetDiag"
 REG_UNINST = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\NetDiag"
 KEY_WRITE64 = winreg.KEY_WRITE | winreg.KEY_WOW64_64KEY
@@ -112,7 +115,7 @@ def payload_path() -> str:
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     p = os.path.join(base, "payload.zip")
     if not os.path.isfile(p):
-        raise FileNotFoundError(f"安装包损坏：缺少 payload.zip（{p}）")
+        raise FileNotFoundError(L("payload_missing", path=p))
     return p
 
 
@@ -164,6 +167,42 @@ def _drop_key(root: int, key: str) -> None:
         pass
 
 
+def _key_exists(root: int, key: str) -> bool:
+    try:
+        with winreg.OpenKey(root, key, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY):
+            return True
+    except OSError:
+        return False
+
+
+_BAD_PATH_CHARS = set('"<>|?*')
+
+
+def path_problem(path: str) -> str:
+    """返回路径不合法的原因（空串表示可用）。
+
+    这些字符 Windows 路径里本来就不允许；更重要的是提权那一步会把选中的
+    目录拼进命令行，路径里带引号就能伪造出额外参数（例如覆盖 /DESKTOP=）。
+    """
+    if not path.strip():
+        return L("need_dir")
+    if any(ch in _BAD_PATH_CHARS or ord(ch) < 32 for ch in path):
+        return L("bad_path_chars")
+    return ""
+
+
+def has_foreign_files(target: str) -> bool:
+    """目录已存在、非空，且不是 NetDiag 目录（判断依据是没有主程序）。"""
+    if not os.path.isdir(target):
+        return False
+    if os.path.isfile(os.path.join(target, EXE_NAME)):
+        return False                      # 升级安装：目录里已有 NetDiag
+    try:
+        return bool(os.listdir(target))
+    except OSError:
+        return False
+
+
 def write_registry(target: str, exe: str, uninst: str, size_kb: int,
                    desktop: bool, startmenu: bool, desktop_lnk: str, start_dir: str) -> str:
     """优先写 HKLM（全机器可见）；没有管理员权限时回落 HKCU。返回 "HKLM"/"HKCU"。"""
@@ -173,16 +212,54 @@ def write_registry(target: str, exe: str, uninst: str, size_kb: int,
     }
     dword_extra = {"DesktopShortcut": int(bool(desktop)),
                    "StartMenuShortcut": int(bool(startmenu))}
+    # 机器上可能已经装着旧版本：写 HKLM 失败（无权限 / 策略锁定）不代表那条
+    # 卸载项是本次的残留，删掉会让旧版本在「设置 → 应用」里失去卸载入口。
+    had_machine_key = (_key_exists(winreg.HKEY_LOCAL_MACHINE, REG_UNINST)
+                       or _key_exists(winreg.HKEY_LOCAL_MACHINE, REG_APP))
     try:
         _write_uninstall_key(winreg.HKEY_LOCAL_MACHINE, target, exe, uninst, size_kb,
                              str_extra, dword_extra)
         return "HKLM"
     except OSError:
-        _drop_key(winreg.HKEY_LOCAL_MACHINE, REG_UNINST)
-        _drop_key(winreg.HKEY_LOCAL_MACHINE, REG_APP)
+        if not had_machine_key:           # 只有本次新建的键才需要清理
+            _drop_key(winreg.HKEY_LOCAL_MACHINE, REG_UNINST)
+            _drop_key(winreg.HKEY_LOCAL_MACHINE, REG_APP)
     _write_uninstall_key(winreg.HKEY_CURRENT_USER, target, exe, uninst, size_kb,
                          str_extra, dword_extra)
     return "HKCU"
+
+
+def copy_tree(src: str, dst: str) -> None:
+    """并发复制目录；robocopy 不可用时回落到 copytree。
+
+    ``zipfile.extract`` 直接往目标目录逐文件写会产生大量随机 IO，开着实时
+    保护的机器上 233 个文件要十几分钟；先顺序解压到临时目录、再 robocopy
+    /MT 复制，同样内容十几秒就能完成。
+    """
+    os.makedirs(dst, exist_ok=True)
+    try:
+        r = subprocess.run(
+            # /R:2 /W:2：默认是重试百万次、每次等 30 秒，遇到被占用的文件会假死
+            ["robocopy", src, dst, "/E", "/MT:16", "/R:2", "/W:2",
+             "/NFL", "/NDL", "/NJH", "/NJS", "/nc", "/ns", "/np"],
+            capture_output=True, text=True, errors="replace", timeout=600)
+        if r.returncode < 8:               # 0–7 都算成功（1=复制了文件）
+            return
+    except (OSError, subprocess.SubprocessError):
+        pass
+    shutil.copytree(src, dst, dirs_exist_ok=True)
+
+
+def _staging_dir(target: str) -> str:
+    """在目标目录同盘下开临时目录，跨盘复制会失去并发带来的收益。"""
+    import tempfile
+    parent = os.path.dirname(os.path.abspath(target))
+    for base in (parent, os.environ.get("TEMP") or parent):
+        try:
+            return tempfile.mkdtemp(prefix=".netdiag-stage-", dir=base)
+        except OSError:
+            continue
+    raise OSError(L("stage_failed", path=parent))
 
 
 def install(target: str, desktop: bool, startmenu: bool, on_progress=None,
@@ -192,10 +269,12 @@ def install(target: str, desktop: bool, startmenu: bool, on_progress=None,
     created = not os.path.isdir(target)
     os.makedirs(target, exist_ok=True)
 
+    stage = None
     try:
         with zipfile.ZipFile(payload_path()) as z:
             infos = z.infolist()
             total = sum(i.file_size for i in infos) or 1
+            stage = _staging_dir(target)
             done = 0
             for idx, info in enumerate(infos):
                 # 安全软件会对刚写入的 PE/DLL 做实时扫描并短暂持有句柄，
@@ -203,24 +282,30 @@ def install(target: str, desktop: bool, startmenu: bool, on_progress=None,
                 # 不该让整个安装失败并留下半装目录，因此做几次短退避重试。
                 for attempt in range(4):
                     try:
-                        z.extract(info, target)
+                        z.extract(info, stage)
                         break
                     except OSError as exc:
                         if attempt == 3 or exc.errno not in (13, 32):
                             raise
                         time.sleep(0.3 * (attempt + 1))
                 done += info.file_size
-                if on_progress and (idx % 5 == 0 or idx == len(infos) - 1):
-                    on_progress(int(done * 100 / total), f"正在解压 {info.filename}")
+                if on_progress and (idx % 10 == 0 or idx == len(infos) - 1):
+                    on_progress(int(done * 70 / total), L("extracting", name=info.filename))
+            if on_progress:
+                on_progress(72, L("copying_files"))
+            copy_tree(stage, target)
     except Exception:
         # 解压中途失败时不要留下半个可运行目录（用户会以为装好了）
         if created:
             shutil.rmtree(target, ignore_errors=True)
         raise
+    finally:
+        if stage:
+            shutil.rmtree(stage, ignore_errors=True)
 
     exe = os.path.join(target, EXE_NAME)
     if not os.path.isfile(exe):
-        raise FileNotFoundError("解压后没有找到 NetDiag.exe，安装包可能不完整")
+        raise FileNotFoundError(L("missing_exe"))
 
     uninst = os.path.join(target, UNINST_NAME)
     # 提权安装时本进程的桌面/开始菜单可能是管理员账户的，优先用提权前传进来的路径
@@ -229,7 +314,7 @@ def install(target: str, desktop: bool, startmenu: bool, on_progress=None,
     desktop_lnk = os.path.join(desktop_dir, LNK_NAME + ".lnk")
 
     if on_progress:
-        on_progress(92, "正在创建快捷方式")
+        on_progress(92, L("creating_links"))
     if desktop:
         make_shortcut(desktop_lnk, exe, target, f"{APP_NAME} v{VERSION}")
     if startmenu:
@@ -237,16 +322,17 @@ def install(target: str, desktop: bool, startmenu: bool, on_progress=None,
         os.makedirs(group, exist_ok=True)
         make_shortcut(os.path.join(group, LNK_NAME + ".lnk"), exe, target,
                       f"{APP_NAME} v{VERSION}")
-        make_shortcut(os.path.join(group, "卸载 NetDiag.lnk"), uninst, target, "卸载 NetDiag")
+        make_shortcut(os.path.join(group, L("uninstall_lnk") + ".lnk"), uninst, target,
+                      L("uninstall_lnk"))
 
     if on_progress:
-        on_progress(96, "正在写入卸载信息")
+        on_progress(96, L("writing_reg"))
     size_kb = int(sum(i.file_size for i in infos) / 1024)
     reg_root = write_registry(target, exe, uninst, size_kb, desktop, startmenu,
                               desktop_lnk, start_dir)
 
     if on_progress:
-        on_progress(100, "安装完成")
+        on_progress(100, L("finished"))
     return {"target": target, "exe": exe, "reg_root": reg_root}
 
 
@@ -294,7 +380,7 @@ def run_gui(opts: dict) -> int:
             if state["done"]:
                 ui.user32.DestroyWindow(f.hwnd)
                 return
-            if ui.message_box("确定要退出安装吗？", "NetDiag 安装程序",
+            if ui.message_box(L("confirm_exit"), SETUP_TITLE,
                               ui.MB_YESNO | ui.MB_ICONQUESTION) == ui.IDYES:
                 ui.user32.DestroyWindow(f.hwnd)
         elif cid == ID_BROWSE and not state["busy"]:
@@ -319,30 +405,34 @@ def run_gui(opts: dict) -> int:
 
     def start_install() -> None:
         target = ui.text_of(ui.user32.GetDlgItem(f.hwnd, ID_PATH)).strip().strip('"')
-        if not target:
-            f.message("请填写安装目录。", "NetDiag 安装程序", ui.MB_OK | ui.MB_ICONERROR)
+        problem = path_problem(target)
+        if problem:
+            f.message(problem, SETUP_TITLE, ui.MB_OK | ui.MB_ICONERROR)
             return
         if os.path.isfile(target):
-            f.message("安装目录不能是一个已存在的文件。", "NetDiag 安装程序",
+            f.message(L("dir_is_file"), SETUP_TITLE,
                       ui.MB_OK | ui.MB_ICONERROR)
             return
 
         target = os.path.abspath(target)
+        # 目录里没有 NetDiag 却已经有别人的文件：装进去会让卸载把那些文件
+        # 一起删掉（卸载按目录删），所以必须先让用户确认。
+        if has_foreign_files(target) and f.message(
+                L("foreign_dir", path=target), L("foreign_dir_title"),
+                ui.MB_YESNO | ui.MB_ICONWARNING) != ui.IDYES:
+            return
         # 目标写不进去（Program Files）且当前不是管理员 → 用 runas 重启自身再装
         if not ui.can_write_dir(target) and not ui.is_admin():
             if ui.message_box(
-                    f"安装到以下位置需要管理员权限：\n\n{target}\n\n"
-                    "点「是」会弹出系统授权窗口，授权后自动继续安装。\n\n"
-                    f"如果不想提权，可以把安装目录改成：\n{user_dir()}",
-                    "需要管理员权限",
+                    L("admin_ask", path=target, user=user_dir()),
+                    L("admin_ask_title"),
                     ui.MB_YESNO | ui.MB_ICONQUESTION) != ui.IDYES:
                 return
             if ui.relaunch_elevated(elevate_params(target)):
                 ui.user32.DestroyWindow(f.hwnd)
                 return
-            f.message("没有获得管理员权限，安装没有开始。\n\n"
-                      f"可以把安装目录改到用户目录后重试：\n{user_dir()}",
-                      "权限不足", ui.MB_OK | ui.MB_ICONERROR)
+            f.message(L("admin_denied", user=user_dir()),
+                      L("admin_denied_title"), ui.MB_OK | ui.MB_ICONERROR)
             return
 
         state["busy"] = True
@@ -353,7 +443,7 @@ def run_gui(opts: dict) -> int:
         f.enable(ID_DESK, False)
         f.enable(ID_START, False)
         f.enable(ID_RUN, False)
-        ui.set_text(f.btn_install_hwnd, "安装中…")
+        ui.set_text(f.btn_install_hwnd, L("installing_btn"))
 
         def progress(pct: int, text: str) -> None:
             f.set_progress(f.h_prog, pct, 100)
@@ -366,27 +456,25 @@ def run_gui(opts: dict) -> int:
         except Exception as exc:  # noqa: BLE001
             state["busy"] = False
             f.set_progress(f.h_prog, 0, 100)
-            ui.set_text(f.h_status, "安装失败")
+            ui.set_text(f.h_status, L("failed_status"))
             for cid in (ID_INSTALL, ID_BROWSE, ID_PATH, ID_DESK, ID_START, ID_RUN):
                 f.enable(cid, True)
-            ui.set_text(f.btn_install_hwnd, "安装")
-            f.message(f"安装失败：\n\n{exc}", "NetDiag 安装程序", ui.MB_OK | ui.MB_ICONERROR)
+            ui.set_text(f.btn_install_hwnd, L("install_btn"))
+            f.message(L("install_failed", err=exc), SETUP_TITLE, ui.MB_OK | ui.MB_ICONERROR)
             return
 
         state["busy"] = False
         state["done"] = True
         f.set_progress(f.h_prog, 100, 100)
-        ui.set_text(f.h_status, f"已安装到 {state['target']}")
-        ui.set_text(f.btn_install_hwnd, "完成")
+        ui.set_text(f.h_status, L("installed_to", path=state["target"]))
+        ui.set_text(f.btn_install_hwnd, L("done_btn"))
         f.enable(ID_INSTALL, True)
 
-        scope = "所有用户" if info["reg_root"] == "HKLM" else "当前用户"
+        scope = L("scope_all") if info["reg_root"] == "HKLM" else L("scope_user")
         launch = f.checked(ID_RUN)
-        if f.message(f"{APP_NAME} v{VERSION} 已安装完成。\n\n"
-                     f"安装目录：{state['target']}\n"
-                     f"卸载入口：{scope}（设置 → 应用）\n\n"
-                     "可从桌面或开始菜单启动。",
-                     "安装完成", ui.MB_OK | ui.MB_ICONINFORMATION) == 1 and launch:
+        if f.message(L("done_msg", app=APP_NAME, ver=VERSION,
+                       path=state["target"], scope=scope),
+                     L("done_title"), ui.MB_OK | ui.MB_ICONINFORMATION) == 1 and launch:
             exe = os.path.join(state["target"], EXE_NAME)
             if ui.is_admin():
                 ui.launch_unelevated(exe, state["target"])  # 别把高权限传给主程序
@@ -394,25 +482,26 @@ def run_gui(opts: dict) -> int:
                 os.startfile(exe)
         ui.user32.DestroyWindow(f.hwnd)
 
-    f = ui.Form(f"{APP_NAME} v{VERSION} 安装程序", 520, 286,
+    f = ui.Form(SETUP_TITLE, 520, 286,
                 on_command=on_command, on_close=lambda: not state["busy"])
 
     f.h_title = f.label(f"{APP_NAME}  v{VERSION}", 18, 12, 480, 26)
     ui.set_font(f.h_title, ui.bold_font())
-    f.label("默认安装到 C:\\Program Files\\NetDiag（需管理员授权）。",
-            18, 42, 484, 20, style=ui.SS_ENDELLIPSIS)
+    f.label(L("hint_dir"), 18, 42, 484, 20, style=ui.SS_ENDELLIPSIS)
     f.h_path = f.edit(state["target"], 18, 66, 392, 24, ID_PATH)
-    f.button("浏览…", 418, 65, 84, 26, ID_BROWSE)
-    f.cb_desk = f.checkbox("创建桌面快捷方式", 18, 104, 220, 22, ID_DESK, opts["desktop"])
-    f.cb_start = f.checkbox("在开始菜单创建程序组", 18, 130, 220, 22, ID_START,
+    f.button(L("browse"), 418, 65, 84, 26, ID_BROWSE)
+    f.cb_desk = f.checkbox(L("cb_desk"), 18, 104, 220, 22, ID_DESK, opts["desktop"])
+    f.cb_start = f.checkbox(L("cb_start"), 18, 130, 220, 22, ID_START,
                             opts["startmenu"])
-    f.cb_run = f.checkbox("安装完成后立即运行 NetDiag", 18, 156, 260, 22, ID_RUN, opts["run"])
-    f.label("约 140 MB；不想提权可改到用户目录，卸载在「设置 → 应用」。",
-            18, 184, 484, 18, style=ui.SS_ENDELLIPSIS)
+    f.cb_run = f.checkbox(L("cb_run"), 18, 156, 260, 22, ID_RUN, opts["run"])
+    f.label(L("hint_size"), 18, 184, 484, 18,
+            style=ui.SS_ENDELLIPSIS)
     f.h_prog = f.progress(18, 208, 484, 16, ID_PROG)
-    f.h_status = f.label("准备就绪", 18, 230, 484, 18, ID_STATUS, ui.SS_ENDELLIPSIS)
-    f.btn_install_hwnd = f.button("安装", 336, 250, 80, 28, ID_INSTALL, default=True)
-    f.button("退出", 422, 250, 80, 28, ID_EXIT)
+    f.h_status = f.label(L("ready"), 18, 230, 484, 18, ID_STATUS,
+                         ui.SS_ENDELLIPSIS)
+    f.btn_install_hwnd = f.button(L("install_btn"), 336, 250, 80, 28, ID_INSTALL,
+                                  default=True)
+    f.button(L("exit_btn"), 422, 250, 80, 28, ID_EXIT)
 
     f.show()
     if opts["auto"]:
@@ -437,7 +526,7 @@ def browse_folder(owner: int, initial: str) -> str:
     bi = BROWSEINFOW()
     bi.hwndOwner = owner
     bi.pszDisplayName = ctypes.cast(buf, wt.LPWSTR)
-    bi.lpszTitle = "选择 NetDiag 的安装位置"
+    bi.lpszTitle = L("browse_title")
     bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_EDITBOX
     pidl = ui.shell32.SHBrowseForFolderW(ctypes.byref(bi))
     if not pidl:
@@ -450,18 +539,24 @@ def browse_folder(owner: int, initial: str) -> str:
 
 def run_silent(opts: dict) -> int:
     target = os.path.abspath(opts["dir"] or default_dir())
+    problem = path_problem(target)
+    if problem:
+        print(problem)
+        return 2
+    if has_foreign_files(target):
+        print(L("silent_foreign", path=target))
+        return 3
     # 静默模式不自动弹 UAC（脚本无法等待授权框），直接说明原因与可写目录
     if not ui.can_write_dir(target) and not ui.is_admin():
-        print(f"安装失败: 没有写入权限 {target}\n"
-              f"请以管理员身份运行，或用 /D= 指定可写目录（例如 {user_dir()}）")
+        print(L("silent_no_perm", path=target, user=user_dir()))
         return 2
     try:
         info = install(target, opts["desktop"], opts["startmenu"], None,
                        opts["desktop_dir"], opts["start_dir"])
     except Exception as exc:  # noqa: BLE001
-        print(f"安装失败: {exc}")
+        print(L("silent_failed", err=exc))
         return 1
-    print(f"已安装到 {info['target']}（卸载信息：{info['reg_root']}）")
+    print(L("silent_ok", path=info["target"], root=info["reg_root"]))
     if opts["run"]:
         exe = os.path.join(info["target"], EXE_NAME)
         if ui.is_admin():

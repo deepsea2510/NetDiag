@@ -32,6 +32,12 @@ import struct
 import subprocess
 import time
 import urllib.parse
+
+try:
+    from app.i18n import T as _t          # v10.13：summary() 的界面文案随语言切换
+except Exception:                         # 兜底：i18n 不可用时原样返回中文
+    def _t(s: str) -> str:
+        return s
 from dataclasses import dataclass, asdict, field
 from typing import Callable, Iterable, Optional
 
@@ -575,19 +581,20 @@ class DictPlan:
     def summary(self) -> str:
         """"内置 31 组 · 外挂 2 个文件 120 组 · 联合后 148 组" 这样的一行说明。"""
         if not self.files:
-            return f"字典 {len(self.creds)} 组（内置）"
+            return _t("字典 {} 组（内置）").format(len(self.creds))
         parts = []
         if self.base:
-            parts.append(f"内置 {self.base} 组")
-        parts.append(f"外挂 {len(self.files)} 个文件 {self.file_pairs + self.passwords} 组")
+            parts.append(_t("内置 {} 组").format(self.base))
+        parts.append(_t("外挂 {} 个文件 {} 组").format(
+            len(self.files), self.file_pairs + self.passwords))
         if self.expanded:
-            parts.append(f"纯口令展开 +{self.expanded}")
+            parts.append(_t("纯口令展开 +{}").format(self.expanded))
         text = " · ".join(parts)
-        text += f" · 联合后 {len(self.creds)} 组"
+        text += _t(" · 联合后 {} 组").format(len(self.creds))
         if self.truncated:
-            text += f"（已按上限 {MAX_CREDS} 组截断）"
+            text += _t("（已按上限 {} 组截断）").format(MAX_CREDS)
         if self.missing:
-            text += f" · {len(self.missing)} 个文件读取失败"
+            text += _t(" · {} 个文件读取失败").format(len(self.missing))
         return text
 
 

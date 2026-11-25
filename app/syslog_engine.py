@@ -1,4 +1,4 @@
-"""Syslog 服务器底层引擎（v10.12）。
+"""Syslog 服务器底层引擎（v10.13）。
 
 借鉴常见日志平台的「解析 → 规则分类 → 告警 → 存储」流水线设计：
 - 纯标准库实现（socket/socketserver/queue/threading/sqlite3/re/json 等），零第三方依赖；
@@ -754,7 +754,7 @@ class _ShardStore:
 
 
 class LogStore:
-    """内置 SQLite 事件仓库（v10.12 支持按体积自动分片）。
+    """内置 SQLite 事件仓库（v10.12 起支持按体积自动分片）。
 
     - 当前分片达到 ``shard_mb`` 后自动创建新库，旧库保留；
     - 查询 / 统计 / 清理覆盖主库与所有分片；

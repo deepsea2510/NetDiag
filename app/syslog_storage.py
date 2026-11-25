@@ -1,4 +1,4 @@
-"""Syslog 存储后端：本地 SQLite / 按来源文件归档 / 外部常规数据库（v10.12）。
+"""Syslog 存储后端：本地 SQLite / 按来源文件归档 / 外部常规数据库（v10.13）。
 
 设计目标：
 - GUI 只依赖统一接口 ``add_events / query / counts / prune / close``，与原有
@@ -26,6 +26,12 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+
+try:
+    from app.i18n import T as _t          # v10.13：describe() 的界面文案随语言切换
+except Exception:                         # 兜底：i18n 不可用时原样返回中文
+    def _t(s: str) -> str:
+        return s
 
 from app.oid_store import data_dir
 from app.syslog_engine import LogStore
@@ -288,20 +294,22 @@ def describe(cfg: dict) -> str:
     cfg = normalize_config(cfg)
     if cfg["mode"] == "sqlite":
         shard = cfg["sqlite"]["shard_mb"]
-        rule = f"分片≥{shard}MB" if shard else "单库不分片"
+        rule = _t("分片≥{}MB").format(shard) if shard else _t("单库不分片")
         return f"SQLite · {resolve_path(cfg['path'], True, 'syslog.db')} · {rule}"
     if cfg["mode"] == "files":
         arc = cfg["archive"]
-        bits = ["按源分文件" if arc["by_source"] else "单一文件"]
+        bits = [_t("按源分文件") if arc["by_source"] else _t("单一文件")]
         if arc["max_mb"]:
             bits.append(f"≥{arc['max_mb']}MB")
         if arc["max_hours"]:
-            bits.append(f"≥{arc['max_hours']}小时")
-        bits.append(f"留{arc['keep']}份" + ("·gzip" if arc["gzip"] else ""))
-        return f"文件归档 · {resolve_path(cfg['path'], False, 'files')} · " + " / ".join(bits)
+            bits.append(_t("≥{}小时").format(arc["max_hours"]))
+        bits.append(_t("留{}份").format(arc["keep"]) + ("·gzip" if arc["gzip"] else ""))
+        return _t("文件归档 · {} · {}").format(
+            resolve_path(cfg['path'], False, 'files'), " / ".join(bits))
     db = cfg["database"]
-    target = db["dsn"] or db["name"] or db["host"] or "本地文件"
-    return f"数据库 · {DB_LABELS.get(db['type'], db['type'])} · {target} · 表 {db['table']}"
+    target = db["dsn"] or db["name"] or db["host"] or _t("本地文件")
+    return _t("数据库 · {} · {} · 表 {}").format(
+        _t(DB_LABELS.get(db['type'], db['type'])), target, db['table'])
 
 
 # ---------------------------------------------------------------- 初始化脚本
@@ -343,7 +351,7 @@ def init_script(cfg: dict) -> str:
     table = safe_table_name(db["table"])
     placeholder = "<请填入应用账号密码>"
     lines = [
-        "-- NetDiag Syslog 外部数据库初始化脚本（v10.12）",
+        "-- NetDiag Syslog 外部数据库初始化脚本（v10.13）",
         f"-- 目标类型：{DB_LABELS.get(typ, typ)}    目标表：{table}",
         "-- 说明：本脚本只创建库 / 账号授权 / 数据表，不会安装或启动数据库服务。",
         "--       脚本不包含当前保存的口令，请由 DBA 填入应用账号密码后审阅执行。",

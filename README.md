@@ -1,6 +1,11 @@
-# NetDiag 网络诊断工具 v10.12
+# NetDiag 网络诊断工具 v10.13.5
 
-本地运行的网络诊断桌面工具（PySide6 原生 GUI）：原生 ICMP 批量 Ping、端口扫描、协议指纹识别、弱口令/未授权访问自查（默认关闭）、路由跟踪、DNS、SNMP v1-v3、WMI 只读查询、Syslog 服务。
+本地运行的网络诊断桌面工具（PySide6 原生 GUI）：原生 ICMP 批量 Ping、端口扫描、协议指纹识别、弱口令/未授权访问自查（默认关闭）、路由跟踪、DNS、SNMP v1-v3、WMI 只读查询、Syslog 服务。界面支持**中英双语**，跟随系统语言自动适配，也可在菜单手动切换。
+
+> [**English introduction →**](README_EN.md) — English users please read `README_EN.md`.
+
+> [!IMPORTANT]
+> **使用边界**：仅限自有或已获书面授权的资产。弱口令/未授权访问探测**默认关闭**。
 
 ## 使用边界与免责声明
 
@@ -73,8 +78,14 @@
 - `v10.9`：**Ping 结果直达 SNMP / WMI / 扫描目标**。右键 Ping 在线行即可把 IP 送入对应目标输入框并跳转页签；SNMP、WMI 目标框右侧新增「Ping 结果 ▾」下拉，从已探测的在线主机里选（按 IP 去重、只取在线、菜单最多 30 项防止超出屏幕、空结果时引导去 Ping）。同时承接 v10.8-secfix 的 10 项代码审计修复。配套 `_probe/check_ping_to_targets.py` 12 项离屏回归
 - `v10.10`：**Syslog 存储与归档可扩展**。新增独立存储层 `app/syslog_storage.py`，GUI 与流水线只依赖 `add_events/query/counts/prune/close` 统一接口，三种后端可热切换：本地 SQLite 自定义路径、按来源分文件的体积/时间轮转归档（gzip + 保留份数）、外部常规数据库（SQLite / MySQL / PostgreSQL / SQL Server / Oracle / ODBC，参数化 SQL、表名白名单、驱动按需加载、DPAPI 保护口令）。配置原子写，连接失败自动回退本地库并给出明确提示。驱动随发行版打包，ODBC 方式仍需目标机安装相应 ODBC 驱动
 - `v10.11`：**外部数据库初始化引导，不新增数据库实例管理**。按评估结论保留 v10.10 的“连接现有实例 + 自动建表”边界，不自动安装 / 启动数据库服务；改为提供“生成初始化 SQL…”脚本向导，按数据库类型输出建库 / 用户授权 / 建表脚本，脚本不含当前口令、不覆盖已有表，并明确交给 DBA 审阅执行。连接预检结构化分类，给出驱动、网络、认证、权限、库不存在、表结构不匹配等具体建议
+- `v10.13`：**界面多语言（中文 / English）**。新增 `app/i18n.py`：首次启动按操作系统 locale 自动选择界面语言（zh* → 中文，其余 → English），菜单栏「语言/Language」可随时手动切换并持久化；采用「组件树遍历重翻译」，覆盖窗口标题、标签页、按钮、菜单、分组框、下拉项、表格表头、筛选占位符与提示（526 条词条，字典可逆、中英往返无损）。结果预览状态行（「尚未执行 Ping」等）、介绍/说明文字、WMI 预设与 SNMP OID 快捷下拉、Syslog 存储状态等动态文案一并接入 `T()` 模板并按当前语言生成，切换语言即时刷新；仅语言菜单项保留母语名称（简体中文 / English）
 - `v10.12`：**内置 SQLite 自动分片 + 全模式历史查询**。SQLite 按体积（默认 500 MB）换库、旧库保留并参与统一查询/统计/清理；新增「历史查询…」对话框，把文件归档模式的底层查询能力接入 GUI，两种模式均可检索并导出历史；完成新一轮 bug 与安全审计
-- 当前根目录为 **v10.12（发行版）**：含图标、指纹规则、WMI/Syslog 引擎与安全加固、WMI 远程 DCOM 修复、WMI 结果列宽自适应、Syslog 网卡监听、四模式界面配色、Ping 结果直通三处目标、Syslog 多后端存储与归档、外部库初始化脚本向导与连接预检、内置库分片与全模式历史查询、便携 zip 与 exe 安装包（含卸载器）
+- `v10.13.1`：**修复多语言覆盖缺口（截图反馈）**。三处根因：① `QGroupBox` 用的是 `title()`，旧代码误调 `text()`，导致 **所有分组标题**（批量 Ping 诊断、扫描概览、路由跟踪结果、DNS 查询结果…）永远不被翻译；② 表格**单元格**不在重翻译范围，状态列的「● 在线 / ● 离线 / ● 响应」与 OID 来源、WMI 预设描述、Syslog 分类名一直显示中文；③ 统计行是整段富文本（`set_stats`），字典按整串匹配命中不到。修法：`retranslate_widget` 补齐 `QGroupBox.title()`、`QTableWidget` 单元格与单元格 tooltip、`QMenu` 子菜单、`QComboBox` 占位符；新增 `i18n.F()` 顺序填充模板（值里带花括号也不炸），把「正在 Ping {} 个目标…」「识别到 {} 个 IP」「扫描 {} 的端口」等 36 处动态拼接、右键菜单、按钮运行态（运行中/扫描中/查询中）全部改为模板化；`set_stats` 存中文原文、渲染时再翻译，切换语言与换肤都能重算；统计行冒号随语言用半角/全角。词条 612 → 657（值唯一、可逆）。新增三个门禁探针：`i18n_coverage.py`（主窗口 + 表格 + 统计行 + 分组标题）、`i18n_dialogs.py`（8 个对话框）、`i18n_visible_scan.py`（静态扫描所有显示上下文字面量，0 遗漏即通过），外加 `i18n_roundtrip.py` 中英往返逐项比对
+- `v10.13.2`：**按截图继续修多语言的两处残留（+ 顺带修裁切）**。① Ping 页「识别本机网卡」下拉的首项「选择本机网段填入...」在按钮回调里动态重建，没走 `T()`——切到英文后**再点一次按钮就退回中文**，现已改为 `T()` 生成；② 端口扫描页「探测设置…」按钮 `setFixedWidth(96)` 是按中文宽度写死的，英文 "Probe Settings…" 被裁成 "obe Setting"，现改为最小宽度并让布局按内容自适应。同时排查同类问题：`⟳ 网卡`、`Ping 结果 ▾`、`⟳ 识别本机网卡` 三个按钮与「排序」下拉也修掉；**表格列宽**按中文表头写死（「协议」56px）导致英文表头被裁成 "roto"，现在新增 `i18n.fit_table_columns()`，在翻译后按字体实测宽度补足，并把设计宽度存进 `_base_widths`，切回中文能落回原值。另新增 `i18n.SEP()`——IP / 文件名列表拼进英文句子时用 ", "（中文仍用顿号）。新增门禁探针 `i18n_elide.py`（固定宽度裁切检查，0 条为通过），`i18n_coverage.py` 增加「模拟点击识别网卡 / 刷新网卡后再扫」的动态回归。词条仍 657 条，`test_i18n.py` 14 → 16 项
+- `v10.13.3`：**修掉探测结论里的中文（截图反馈）**。根因不是漏了词条，而是「整串查字典」这条路对**带变量的句子**根本无效：`weakpass` 的说明是拼出来的（`HTTP 200，未发现登录表单`、`已试 31 组（服务端断开）`、`未授权（API 7.10）`），字典里没有这一整串，于是「Weak Cred」列在英文界面里一直是中文。修法：新增 `i18n.PT()` 句式翻译——按「中文句式 → 英文模板」逐条匹配，捕获组递归翻译（`表单 首页 · 已试 3 组` → `Form home page · Tried 3 combos`），`⚠/✓/!` 渲染前缀剥离后原样拼回，多行 tooltip 逐行翻译；固定短语仍走字典（新增 32 条，657 → 692）。同时补三处同类问题：① 扫描统计行的「未授权」缺词条；② Syslog「分类」列在日志到达时写入，没走 `T()`，切英文后新到的日志仍显示「系统告警」；③ Syslog 监听地址下拉为全角括号 `ip（网卡名）`，改为 `T("{}（{}）")` 随语言输出半角。表格单元格新增 `ORIG_ROLE` 记录中文原文，动态说明才能 EN→ZH→EN 反复往返（`i18n_roundtrip.py` 增 4 项比对）。Windows 中文网卡名做有限映射（「以太网 12」→「Ethernet 12」），只认固定词 + 序号，VPN / 虚拟网卡 / 用户自改名一律保留原样。新增门禁探针 `i18n_cjk_sweep.py`：填满 7 个页签后遍历整棵组件树，报出仍含汉字的控件与单元格（当前 0 条）；`test_i18n.py` 16 → 21 项
+- `v10.13.4`：**安装 / 卸载向导支持中英文**。安装器与卸载器是纯 Win32（ctypes，不引用主程序的 PySide6），此前界面文案全是中文，英文 Windows 上装机会看到中文向导。新增 `installer/win_lang.py`：一张 50 键的双语文案表，按 `GetUserDefaultUILanguage()` 自动选择，也可用 `NETDIAG_LANG=zh_CN|en_US` 强制覆盖；安装向导、解压进度、错误提示、卸载确认与完成框、快捷方式名，以及「设置 → 应用」里的显示名都随语言切换。顺带修掉一处跨模块不一致：`app/i18n.system_language()` 原先用 `QLocale.system()`，会被 `LANG` 环境变量带偏（Git Bash / MinGW / 部分 IDE 会设 `LANG=en_US.UTF-8`，中文 Windows 因此被判成英文），Windows 上现在统一走 `GetUserDefaultUILanguage()`，与安装器同源——否则会出现「安装向导中文、程序启动后英文」。新增门禁 `_probe/check_installer_i18n.py`（键集合一致 / 占位符一致 / 语言纯净，50 条全通过），闭环探针 `e2e_install_uninst_10134.py` 支持 `NETDIAG_LANG`，中英两种界面各跑一遍
+- `v10.13.5`：**安装 / 卸载链路安全审核与修复**。审计发现 6 处问题，其中两处为「外部可控路径 → 越权删除」：① 卸载器把注册表 `StartMenuShortcutPath` / `DesktopShortcutPath` 直接交给 `rmtree`，而 `HKCU\Software\NetDiag` 普通用户即可写 —— 把值改成文档目录，用户点「卸载」就会被递归删除；现加 `_safe_shortcut()` 白名单（必须落在桌面 / 开始菜单目录内、`.lnk` 后缀、且不能等于父目录本身）。② 卸载目标本身无保护，若攻击者在公共目录放一对同名 `NetDiag.exe` + `uninstall.exe` 并改注册表，卸载会 rmtree 整个公共目录；现加 `_too_broad()` 拒绝盘符根与系统目录。另外修：写 HKLM 失败时误删旧版卸载入口（先探测键是否已存在）、提权参数注入（路径含 `"` 可伪造 `/DESKTOP=`）、装进非空外来目录导致卸载连带删除（现二次确认）、注册表清理误伤另一份安装（改为按 `InstallPath` 匹配）。同时把打包与安装的文件复制改为 robocopy 多线程 + 安装时先解到同盘临时目录再并发复制：233 个文件从「复制十几分钟」降到秒级（打包 18 分钟 → 54 秒，安装卸载闭环 0.8 秒）。新增门禁 `_probe/test_installer_security.py`（30 条断言）与 `_probe/check_installer_i18n.py`（57 条文案）。完整说明见 [`docs/CHANGELOG-v10.13.5.md`](docs/CHANGELOG-v10.13.5.md)
+- 当前根目录为 **v10.13.5（发行版）**：含图标、指纹规则、WMI/Syslog 引擎与安全加固、WMI 远程 DCOM 修复、WMI 结果列宽自适应、Syslog 网卡监听、四模式界面配色、Ping 结果直通三处目标、Syslog 多后端存储与归档、外部库初始化脚本向导与连接预检、内置库分片与全模式历史查询、中英双语界面、便携 zip 与 exe 安装包（含卸载器）
 
 ## 运行
 
@@ -444,7 +455,7 @@ MongoDB、VNC、ES、Docker、Memcached、Telnet、FTP、SMTP、Redis、HTTP Bas
 - **解析**：自动识别 RFC3164（`<34>Oct 11 22:14:15 host sshd[1234]: ...`，含单位数日空格、跨年补正）、RFC5424（`<165>1 2026-...Z host app - ID47 [sd] msg`）与裸文本；PRI 用整除还原 facility/severity；
 - **归类与告警**：内置 `syslog/rules.json` **36 条**规则，按优先级降序首个命中生效，动作分 `classify`（归类）/ `ignore`（丢弃）/ `severity_rewrite`（重写级别）；告警规则按 `count / window_s / level` 滑动窗口判定，带 `cooldown_s` 冷却，避免刷屏；「规则库…」可勾选外挂 JSON、查看规则表、在测试台粘贴一行日志看归类结果；
 - **存储（v10.10 可配置，v10.11 增加初始化引导）**：点「存储设置…」选三种后端。**本地 SQLite**：默认 `%APPDATA%\NetDiag\syslog\syslog.db`，可改成任意本地绝对路径（拒绝 UNC 与 `..`），带 FTS5 全文索引（不可用时回退 LIKE）；v10.12 起达到设定 MB 自动换新库，旧分片保留并参与查询/统计/清理。**文件归档**：按日志源分成 `events/<来源>.jsonl`，单文件达到设定 MB 或存放超过设定小时就转移到 `archive/<来源>/`，可选 gzip、每源保留份数（超出删最旧）、按保留天数清理；「历史查询…」会同时读活动文件与 gzip 归档。**外部数据库**：SQLite / MySQL / PostgreSQL / SQL Server / Oracle / 通用 ODBC DSN，配置主机、端口、库名、用户、口令、表名后可「测试连接」；SQL 全部参数化、表名白名单校验，Windows 上口令用 DPAPI 加密写入配置。连接失败时自动回退本地 SQLite 并在状态栏提示，不中断收包；表格最多显示最近 5000 行，「清理旧日志」对当前后端按保留期执行。**初始化 SQL（v10.11）**：点「生成初始化 SQL…」按数据库类型导出建库 / 授权 / 建表脚本，交给 DBA 审阅执行；不创建数据库实例、不含当前口令、不覆盖已有表。测试连接会区分驱动 / DSN / 网络 / 认证 / 权限 / 库不存在 / 表结构不匹配 / 配置不合法并给出建议；
-- **历史查询与导出（v10.12）**：Syslog 页「历史查询…」对内置 SQLite（当前库 + 全部旧分片）与文件归档（活动 + gzip 归档）统一提供关键字 / 来源 / 级别 / 分类 / 最近时长 / 行数过滤，结果按日志时间倒序并可导出 CSV/JSON。实时表格与预警表仍可单独导出（报告版本 10.12）；需要直接看原始文件时，可打开对应分片 `.db` 或 `events/`、`archive/` 下的 JSONL。
+- **历史查询与导出（v10.12）**：Syslog 页「历史查询…」对内置 SQLite（当前库 + 全部旧分片）与文件归档（活动 + gzip 归档）统一提供关键字 / 来源 / 级别 / 分类 / 最近时长 / 行数过滤，结果按日志时间倒序并可导出 CSV/JSON。实时表格与预警表仍可单独导出（报告版本 10.13）；需要直接看原始文件时，可打开对应分片 `.db` 或 `events/`、`archive/` 下的 JSONL。
 
 规则格式（`syslog/rules.json`，节选）：
 
@@ -525,14 +536,14 @@ PyInstaller 已把图标写进 exe，快捷方式直接用 exe 的图标即可�
 双击 `dist/refresh-icon-cache.bat` 重建缓存（会重启资源管理器，不动任何文件）；
 不想重启就用新文件名跑一次（缓存键随路径变化），图标会立刻变新。
 
-## 分发方式（v10.12）
+## 分发方式（v10.13.5）
 
-`dist/` 下两个 10.12 产物，选一个用：
+`dist/` 下两个 10.13 产物，选一个用：
 
 | 产物 | 大小 | 适用 |
 |---|---|---|
-| `NetDiagSetup-10.12.exe` | 约 70 MB | 给同事装到自己电脑：双击 → 默认装到 `C://Program Files\NetDiag`（弹一次 UAC），自动建快捷方式、可卸载 |
-| `NetDiag_v10.12_portable.zip` | 约 57 MB | 拷到 U 盘 / 共享盘：解压出 `NetDiag` 文件夹，双击 `NetDiag.exe` 就能跑 |
+| `NetDiagSetup-10.13.exe` | 约 70 MB | 给同事装到自己电脑：双击 → 默认装到 `C://Program Files\NetDiag`（弹一次 UAC），自动建快捷方式、可卸载 |
+| `NetDiag_v10.13.5_portable.zip` | 约 57 MB | 拷到 U 盘 / 共享盘：解压出 `NetDiag` 文件夹，双击 `NetDiag.exe` 就能跑 |
 
 ### 便携版
 
@@ -555,7 +566,7 @@ NetDiag\
 - 安装目录可改；改到 `%LOCALAPPDATA%\Programs\NetDiag`、`D:\Tools\NetDiag` 等可写目录时**全程不提权**
 - 卸载信息优先写 `HKLM\...\Uninstall\NetDiag`（全机器可见）；没有管理员权限时自动回落 `HKCU`，只在当前用户可见
 - 自动创建桌面快捷方式、开始菜单程序组（含「卸载 NetDiag」）
-- 在「设置 → 应用」/「控制面板 → 程序和功能」里显示为 **NetDiag 网络诊断工具 10.12**，可正常卸载
+- 在「设置 → 应用」/「控制面板 → 程序和功能」里显示为 **NetDiag 网络诊断工具 10.13**，可正常卸载
 - 装在 Program Files 时卸载同样需要管理员权限（自动弹 UAC）；卸载会删除安装目录、两处快捷方式与注册表项，不留残留
 - 卸载时 Windows 不允许删除正在运行的 exe，所以卸载器会先把自身复制成 `%TEMP%\NetDiag-uninst.exe` 再以 `/HANDOFF` 重启，由副本删除安装目录（不弹命令行窗口、不借助 `cmd`/`ping`），原窗口随即退出，副本删完给一次完成提示
 - 临时副本正常情况下退出即删除；非管理员会话无法登记重启删除时，会由下一次卸载/安装顺手回收，`%TEMP%` 里最多留一个同名文件
@@ -564,7 +575,7 @@ NetDiag\
 命令行参数（批量部署用）：
 
 ```bat
-NetDiagSetup-10.12.exe /S /D="D:\Tools\NetDiag" /NORUN
+NetDiagSetup-10.13.exe /S /D="D:\Tools\NetDiag" /NORUN
 ```
 
 | 参数 | 说明 |
@@ -584,7 +595,7 @@ NetDiagSetup-10.12.exe /S /D="D:\Tools\NetDiag" /NORUN
 python tools/build_release.py     # 生成 build/payload.zip、安装包与便携 zip
 ```
 
-> 2026-11-24 代码审计修复版归档于 `archive/v10.8-secfix`；v10.9（Ping 结果直达三处目标）归档于 `archive/v10.9-full`；v10.10（Syslog 多后端存储与文件归档）归档见 `archive/v10.10-full` 与 `archive/v10.10-before-1011`；v10.11（外部库初始化脚本向导与连接预检）归档于 `archive/v10.11-before-1012`；当前 v10.12 新增内置 SQLite 自动分片与全模式历史查询。各归档均含逐文件 SHA256 清单。
+> 2026-11-24 代码审计修复版归档于 `archive/v10.8-secfix`；v10.9（Ping 结果直达三处目标）归档于 `archive/v10.9-full`；v10.10（Syslog 多后端存储与文件归档）归档见 `archive/v10.10-full` 与 `archive/v10.10-before-1011`；v10.11（外部库初始化脚本向导与连接预检）归档于 `archive/v10.11-before-1012`；v10.12（内置 SQLite 自动分片与全模式历史查询）归档于 `archive/v10.12-full`；v10.13 新增中英双语界面，v10.13.1 修复分组标题/表格状态/统计行等漏翻。各归档均含逐文件 SHA256 清单。
 
 安装程序是**纯 Win32（ctypes）界面**、用 PyInstaller 打成单文件，不依赖 Inno Setup / NSIS / tkinter；
 界面代码在 `installer/`（`win32ui.py` 原生控件封装、`setup.py` 安装器、`uninstall.py` 卸载器）。
@@ -594,7 +605,7 @@ python tools/build_release.py     # 生成 build/payload.zip、安装包与便�
 
 ```
 netdiag/
-├── main_qt.py               # v10.12 PySide6 原生 GUI 入口
+├── main_qt.py               # v10.13.5 PySide6 原生 GUI 入口
 ├── test_theme.py            # 配色单元测试（令牌 / 解析 / 配置 / QSS）
 ├── test_theme_gui.py        # 换肤联动测试（离屏，验证样式与表格重上色）
 ├── test_weakpass.py         # 弱口令探测的协议级自测（本地模拟服务端）
@@ -624,8 +635,8 @@ netdiag/
 │   ├── uninstall.py         # 卸载程序（自复制到 TEMP 后删整目录/快捷方式/注册表 + 日志）
 │   └── setup.manifest       # 清单：asInvoker + comctl32 v6 + Per-Monitor DPI（提权由程序自己按需触发）
 ├── dist/NetDiag/            # onedir 打包产物（便携目录版）
-├── dist/NetDiagSetup-10.12.exe        # 安装包（约 70 MB）
-├── dist/NetDiag_v10.12_portable.zip   # 便携版压缩包（约 57 MB）
+├── dist/NetDiagSetup-10.13.exe        # 安装包（约 70 MB）
+├── dist/NetDiag_v10.13.5_portable.zip   # 便携版压缩包（约 57 MB）
 ├── v2.0/ … v9.0/            # 历史版本完整快照，可回退
 ```
 

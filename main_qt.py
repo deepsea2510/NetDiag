@@ -15,7 +15,7 @@ import time
 from dataclasses import asdict
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot, QObject, QTimer, QEvent
-from PySide6.QtGui import QColor, QFont, QIcon, QPalette
+from PySide6.QtGui import QColor, QFont, QIcon, QPalette, QAction, QActionGroup
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QTabWidget, QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox,
@@ -31,6 +31,7 @@ from app import (ping_engine, port_scanner, traceroute as trace_engine, dig_tool
                  wmi_tool, syslog_engine, syslog_storage, theme)
 from app.netifaces import local_networks
 from app.paths import app_root
+from app import i18n  # v10.13：界面多语言（中文/英文，跟随系统 + 手动切换）
 
 # 页签序号（Ping 结果可直接把在线 IP 送入扫描 / SNMP / WMI）
 TAB_PING, TAB_SCAN, TAB_TRACE, TAB_DIG, TAB_SNMP, TAB_WMI, TAB_SYSLOG = range(7)
@@ -356,10 +357,12 @@ def stats_html(items, palette=None):
     颜色取当前主题令牌：换肤时由 :func:`set_stats` 用原始数据重渲染。
     """
     p = palette or theme.current()
+    # 冒号随语言切换：英文界面用半角 ":"，中文用全角 "："
+    sep = ":" if i18n.current() == i18n.EN else "："
     # 目标、设备 sysDescr、WMI 错误信息都可能来自网络或用户输入，必须先转义，
     # 否则 '<' / '&' 会破坏富文本结构（QLabel 还能借此加载本地图片资源）。
     cells = "".join(
-        f'<td align="left" valign="middle"><font color="{p["muted"]}">{html.escape(str(label))}：</font>'
+        f'<td align="left" valign="middle"><font color="{p["muted"]}">{html.escape(str(label))}{sep}</font>'
         f'<font color="{p["ok_fg"]}"><b>{html.escape(str(value))}</b></font></td>'
         for label, value in items
     )
@@ -369,11 +372,20 @@ def stats_html(items, palette=None):
 STATS_ROLE = "nd_stats"
 
 
+def render_stats(label, rows):
+    """按当前语言渲染统计行：标签与值逐项过 ``i18n.T``（未命中即原样）。"""
+    label.setText(stats_html([(i18n.T(str(k)), i18n.T(str(v))) for k, v in rows]))
+
+
 def set_stats(label, items):
-    """写统计标签，并把原始数据挂在控件上，供换肤时重渲染（富文本颜色不吃 QSS）。"""
-    rows = [(str(label_i), str(value)) for label_i, value in items]
+    """写统计标签，并把「中文原文」挂在控件上，供换肤/换语言时重渲染。
+
+    v10.13.1 起：统计行原本是一整段富文本，字典按整串匹配永远命中不到，只能
+    在拼装前逐项翻译；属性里存原文，才能在 EN↔ZH 之间来回切换。
+    """
+    rows = [(str(k), str(v)) for k, v in items]
     label.setProperty(STATS_ROLE, rows)
-    label.setText(stats_html(rows))
+    render_stats(label, rows)
 
 
 class TableFeed:
@@ -570,16 +582,15 @@ class OidManagerDialog(QDialog):
         try:
             st = oid_store.stats(snmp_tool.OID_NAMES)
         except Exception as exc:                     # 存储损坏时也不能让对话框崩掉
-            self.info.setText(f"读取映射库失败：{exc}")
+            self.info.setText(i18n.T("读取映射库失败：{}").format(exc))
             return
-        mods = "、".join(f"{m['module']}（{m['count']}）" for m in st["modules"]) or "尚未导入"
+        mods = i18n.SEP().join(f"{m['module']}（{m['count']}）" for m in st["modules"]) or i18n.T("尚未导入")
         self.info.setText(
-            f"内置 <b>{st['builtin']}</b> 条 · MIB <b>{st['mib']}</b> 条"
-            f"（{len(st['modules'])} 个模块） · 自定义 <b>{st['custom']}</b> 条<br>"
-            f"<span style='color:#6f8179'>已导入模块：{mods}</span><br>"
-            f"<span style='color:#6f8179'>名称优先级：自定义 &gt; MIB &gt; 内置；"
-            f"导入后可在「起始 OID」里直接填对象名（如 sysUpTime 或 laLoad.1）</span>")
-        self.info.setToolTip(f"存储位置：{oid_store.store_path()}")
+            i18n.T("内置 <b>{}</b> 条 · MIB <b>{}</b> 条（{} 个模块） · 自定义 <b>{}</b> 条").format(
+                st['builtin'], st['mib'], len(st['modules']), st['custom']) + "<br>"
+            f"<span style='color:#6f8179'>{i18n.T('已导入模块：{}').format(mods)}</span><br>"
+            f"<span style='color:#6f8179'>{i18n.T('名称优先级：自定义 &gt; MIB &gt; 内置；导入后可在「起始 OID」里直接填对象名（如 sysUpTime 或 laLoad.1）')}</span>")
+        self.info.setToolTip(i18n.T("存储位置：{}").format(oid_store.store_path()))
         self._fill_table()
 
     def _fill_table(self):
@@ -593,7 +604,7 @@ class OidManagerDialog(QDialog):
         for source, oid, name in rows:
             row = self.table.rowCount()
             self.table.insertRow(row)
-            src = QTableWidgetItem(source)
+            src = QTableWidgetItem(i18n.T(source))
             src.setTextAlignment(Qt.AlignCenter)
             paint_item(src, {"内置": "fg:muted", "MIB": "fg:accent",
                              "自定义": "fg:warn"}.get(source, "fg:muted"))
@@ -648,7 +659,7 @@ class OidManagerDialog(QDialog):
         try:
             results = oid_store.import_mib_files(paths)
         except Exception as exc:
-            QMessageBox.critical(self, "导入失败", f"解析 MIB 失败：{exc}")
+            QMessageBox.critical(self, "导入失败", i18n.F("解析 MIB 失败：{}", exc))
             return
         self._reload()
         report_mib_import(self, results)
@@ -739,11 +750,12 @@ class WmiPresetDialog(QDialog):
         for p in ps.items:
             r = self.wp_table.rowCount()
             self.wp_table.insertRow(r)
-            for c, text in enumerate((p["name"], p["namespace"],
-                                      p.get("description") or p["wql"])):
+            for c, text in enumerate((i18n.T(p["name"]), p["namespace"],
+                                      i18n.T(p.get("description") or p["wql"]))):
                 self.wp_table.setItem(r, c, QTableWidgetItem(text))
         self.wp_hint.setText(
-            f"共 {ps.count} 条预设（内置 + 外挂）；错误：{'；'.join(ps.errors) if ps.errors else '无'}")
+            i18n.T("共 {} 条预设（内置 + 外挂）；错误：{}").format(
+                ps.count, '；'.join(ps.errors) if ps.errors else i18n.T('无')))
 
     def _add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -821,8 +833,8 @@ class SyslogRuleDialog(QDialog):
         lay.addWidget(group)
 
         self.sr_hint = QLabel(
-            f"当前生效 {self.rules.count} 条规则（{len(self.rules.sources)} 个来源）；"
-            "按优先级降序匹配，首个命中生效。")
+            i18n.T("当前生效 {} 条规则（{} 个来源）；按优先级降序匹配，首个命中生效。").format(
+                self.rules.count, len(self.rules.sources)))
         lay.addWidget(self.sr_hint)
         self.sr_table = QTableWidget(0, 5)
         self.sr_table.setHorizontalHeaderLabels(["名称", "优先级", "分类", "动作", "告警阈值"])
@@ -865,8 +877,9 @@ class SyslogRuleDialog(QDialog):
     def _reload(self):
         self.rules = syslog_engine.load_rules(self._active_files())
         self.sr_hint.setText(
-            f"当前生效 {self.rules.count} 条规则（{len(self.rules.sources)} 个来源）；"
-            f"错误：{'；'.join(self.rules.errors) if self.rules.errors else '无'}")
+            i18n.T("当前生效 {} 条规则（{} 个来源）；错误：{}").format(
+                self.rules.count, len(self.rules.sources),
+                '；'.join(self.rules.errors) if self.rules.errors else i18n.T('无')))
         self.sr_table.setRowCount(0)
         for r in self.rules.items:
             row = self.sr_table.rowCount()
@@ -877,7 +890,7 @@ class SyslogRuleDialog(QDialog):
                      f"{alert.get('count', '-')}/{alert.get('window_s', '-')}s"
                      if alert else "-"]
             for c, text in enumerate(cells):
-                self.sr_table.setItem(row, c, QTableWidgetItem(str(text)))
+                self.sr_table.setItem(row, c, QTableWidgetItem(i18n.T(str(text))))
 
     def _add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -949,8 +962,8 @@ class FingerprintDialog(QDialog):
         lay.setSpacing(10)
         base = protocol_detect.current_rules()
         lay.addWidget(QLabel(
-            f"当前生效 {base.count} 条规则（{len(base.loaded_files)} 个来源）；"
-            "外挂规则可勾选启用，优先级高的先匹配。识别失败时自动回退到端口表。"))
+            i18n.T("当前生效 {} 条规则（{} 个来源）；外挂规则可勾选启用，优先级高的先匹配。识别失败时自动回退到端口表。").format(
+                base.count, len(base.loaded_files))))
 
         group = QGroupBox("外挂规则文件（JSON）")
         gl = QVBoxLayout(group)
@@ -1269,8 +1282,8 @@ class WeakCredDialog(QDialog):
             item.setData(Qt.UserRole + 1, df.to_dict())
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Unchecked if df.error else Qt.Checked)
-            item.setToolTip(path + (f"\n{df.error}" if df.error else
-                                    f"\n共 {df.lines} 行，跳过 {df.skipped} 行；扫描前会重新读取"))
+            item.setToolTip(path + (f"\n{df.error}" if df.error else i18n.F(
+                "\n共 {} 行，跳过 {} 行；扫描前会重新读取", df.lines, df.skipped)))
             if df.error:
                 paint_item(item, "fg:bad")
             self.dict_list.addItem(item)
@@ -1315,9 +1328,9 @@ class WeakCredDialog(QDialog):
         mode = self.dict_mode.currentData() or "union"
         plan = weakpass.build_creds(base, files, mode)
         self.count.setText(plan.summary())
-        warn = f"每个开放端口最多尝试 {len(plan.creds)} 次"
+        warn = i18n.T("每个开放端口最多尝试 {} 次").format(len(plan.creds))
         if plan.missing:
-            warn = "读取失败：" + "、".join(plan.missing)
+            warn = i18n.T("读取失败：") + i18n.SEP().join(plan.missing)
         self.count.setToolTip(warn)
         if plan.missing:
             style_widget(self.count, "color:#c0392b;")
@@ -1337,7 +1350,8 @@ class WeakCredDialog(QDialog):
             return
         if plan.missing:
             QMessageBox.warning(self, "部分字典读取失败",
-                                "以下文件没有参与本轮探测：\n" + "\n".join(plan.missing))
+                                i18n.F("以下文件没有参与本轮探测：\n{}",
+                                       "\n".join(plan.missing)))
         self.result_base = base
         self.result_dicts = files
         self.result_dict_mode = mode
@@ -1377,7 +1391,7 @@ class ColorSwatchButton(QPushButton):
             return
         self._color = value
         self.setText(value.upper())
-        self.setToolTip(f"{self._title}：{value}（点击修改）")
+        self.setToolTip(i18n.T("{}：{}（点击修改）").format(i18n.T(self._title), value))
         self.setStyleSheet(
             f"background:{value};border:1px solid rgba(0,0,0,0.28);border-radius:7px;"
             f"color:{theme.readable_on(value)};font-family:Consolas,monospace;"
@@ -1520,9 +1534,12 @@ class ThemeDialog(QDialog):
             level, color = "尚可", p["ok_fg"]
         else:
             level, color = "偏低", p["warn_fg"]
-        extra = "" if ratio >= 4.5 else "，正文会偏难读，建议提高亮度对比"
+        extra = "" if ratio >= 4.5 else i18n.T("，正文会偏难读，建议提高亮度对比")
         self.hint.setText(
-            f'<span style="color:{color}">文字 / 背景对比度 {ratio:.1f}:1（{level}）</span>{extra}')
+            f'<span style="color:{color}">'
+            + i18n.T("文字 / 背景对比度 {ratio:.1f}:1（{level}）").format(
+                ratio=ratio, level=i18n.T(level))
+            + f'</span>{extra}')
 
 
 class SqlScriptDialog(QDialog):
@@ -1570,9 +1587,9 @@ class SqlScriptDialog(QDialog):
             with open(path, "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(self.edit.toPlainText())
         except OSError as exc:
-            QMessageBox.warning(self, "保存失败", f"无法写入脚本文件：{exc}")
+            QMessageBox.warning(self, "保存失败", i18n.F("无法写入脚本文件：{}", exc))
         else:
-            QMessageBox.information(self, "已保存", f"脚本已保存到：\n{path}")
+            QMessageBox.information(self, "已保存", i18n.F("脚本已保存到：\n{}", path))
 
 
 class SyslogStorageDialog(QDialog):
@@ -1884,12 +1901,12 @@ class SyslogHistoryDialog(QDialog):
                 if col == 3:
                     paint_item(item, kind)
                 self.table.setItem(r, col, item)
-        self.status.setText(
-            f"查询完成：返回 {len(self._rows)} 条（上限 {self.limit.value()}）。"
-            "结果按日志时间倒序显示。")
+        self.status.setText(i18n.F(
+            "查询完成：返回 {} 条（上限 {}）。结果按日志时间倒序显示。",
+            len(self._rows), self.limit.value()))
 
     def _failed(self, message: str) -> None:
-        self.status.setText("查询失败：" + str(message))
+        self.status.setText(i18n.F("查询失败：{}", message))
         QMessageBox.warning(self, "查询失败", str(message))
 
     def _export(self) -> None:
@@ -1908,8 +1925,9 @@ class SyslogHistoryDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        i18n.ensure_init()              # v10.13：先解析语言，动态文案才能按当前语言生成
         ensure_titlebar_tint()
-        self.setWindowTitle("NetDiag v10.12 网络诊断工具")
+        self.setWindowTitle("NetDiag v10.13.5 网络诊断工具")
         self.setWindowIcon(_app_icon())
         self.setMinimumSize(980, 720)
         self.resize(1120, 820)
@@ -1968,6 +1986,73 @@ class MainWindow(QMainWindow):
         self._apply_theme(self._theme_cfg)
         self._sync_weak_dict_tip()
         self._refresh_syslog_store_label()
+        # v10.13：多语言——按系统语言自动适配（可在「语言」菜单手动切换）
+        i18n.ensure_init()
+        i18n.retranslate_widget(self)
+        i18n.fit_table_columns(self)      # 英文表头更宽，按实测宽度补足列宽
+        self._build_language_menu()
+
+    # ------------------------------------------------------ v10.13 多语言
+
+    def _build_language_menu(self) -> None:
+        """菜单栏「语言/Language」：自动（跟随系统）/ 简体中文 / English。"""
+        self._lang_menu = self.menuBar().addMenu("Language" if i18n.current() == i18n.EN else "语言/Language")
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        for pref in ("auto", i18n.ZH, i18n.EN):
+            act = QAction(i18n.LANG_NAMES[pref], self, checkable=True)
+            act.setChecked(pref == i18n.preference())
+            act.triggered.connect(lambda _checked=False, p=pref: self._switch_language(p))
+            group.addAction(act)
+            self._lang_menu.addAction(act)
+
+    def _switch_language(self, pref: str) -> None:
+        lang = i18n.set_language(pref)
+        self._refresh_dynamic_texts()      # 先按当前状态重写动态文本（含 T 模板）
+        i18n.retranslate_widget(self)      # 再整体重翻译静态文案与下拉项
+        i18n.fit_table_columns(self)       # 表头变长后重新保证列宽
+        self._lang_menu.setTitle("Language" if lang == i18n.EN else "语言/Language")
+        msg = ("Interface language switched to English. A few dynamically "
+               "generated status messages may still appear in Chinese in "
+               "this version.") if lang == i18n.EN else \
+              "界面语言已切换为简体中文。"
+        QMessageBox.information(self, i18n.T("提示"), msg)
+
+    def _refresh_dynamic_texts(self) -> None:
+        """切换语言后按当前状态重写动态生成的状态文本（结果预览行等）。"""
+        # 统计行（Ping/扫描/跟踪/DNS/SNMP/WMI）存了中文原文，这里统一重渲染
+        for label in self.findChildren(QLabel):
+            rows = label.property(STATS_ROLE)
+            if rows:
+                try:
+                    render_stats(label, [tuple(r) for r in rows])
+                except Exception:
+                    pass
+        try:
+            self._sync_weak_dict_tip()
+        except Exception:
+            pass
+        try:
+            self._refresh_syslog_store_label()
+        except Exception:
+            pass
+        try:
+            if not self.syslog_receiver.running:
+                self._refresh_syslog_nics()
+        except Exception:
+            pass
+        wmi_env = getattr(self, "wmi_env", None)
+        if wmi_env is not None:
+            try:
+                ok, msg = wmi_tool.check_powershell()
+                self.wmi_ready = ok and wmi_tool.is_windows()
+                self._wmi_env_msg = msg
+            except Exception:
+                msg = getattr(self, "_wmi_env_msg", "")
+            if self.wmi_ready:
+                wmi_env.setText(i18n.T("环境就绪：{}").format(msg))
+            else:
+                wmi_env.setText(i18n.T("当前环境不可执行 WMI 查询：{}（WMI 仅 Windows 支持，且需 PowerShell）").format(msg))
 
     def closeEvent(self, event):
         """关闭窗口时统一停止线程/定时器/服务，避免 QThread 运行中销毁。"""
@@ -2028,7 +2113,7 @@ class MainWindow(QMainWindow):
         self.tabs = tabs
         tabs.currentChanged.connect(self._on_tab_changed)
 
-        foot = QLabel("NetDiag v10.12 · 本地运行，诊断数据不上传 · 端口/弱口令/指纹 + WMI + Syslog 收集预警")
+        foot = QLabel("NetDiag v10.13.5 · 本地运行，诊断数据不上传 · 端口/弱口令/指纹 + WMI + Syslog 收集预警")
         foot.setAlignment(Qt.AlignCenter)
         style_widget(foot, "color:#9aa79e;font-size:11px;padding:6px;")
 
@@ -2074,7 +2159,7 @@ class MainWindow(QMainWindow):
                 widget.setStyleSheet(theme.remap_qss(tpl))
             rows = widget.property(STATS_ROLE)
             if rows:
-                widget.setText(stats_html([tuple(r) for r in rows]))
+                render_stats(widget, [tuple(r) for r in rows])
         for table in self.findChildren(QTableWidget):
             table.setUpdatesEnabled(False)
             try:
@@ -2149,7 +2234,7 @@ class MainWindow(QMainWindow):
         g.addWidget(self.ping_targets, 0, 1, 1, 4)
 
         self.net_btn = QPushButton("⟳ 识别本机网卡")
-        self.net_btn.setFixedWidth(140)
+        self.net_btn.setMinimumWidth(140)
         self.net_btn.clicked.connect(self._detect_nets)
         g.addWidget(self.net_btn, 1, 0)
         self.net_select = QComboBox()
@@ -2175,7 +2260,9 @@ class MainWindow(QMainWindow):
         self.ping_clear = QPushButton("清空结果"); self.ping_clear.clicked.connect(self._clear_ping)
         self.ping_sort = QComboBox()
         self.ping_sort.addItems(["按 IP 顺序", "在线优先", "延迟从低到高"])
-        self.ping_sort.setFixedWidth(132)
+        # 宽度交给内容决定：中文「延迟从低到高」与英文 "Latency Ascending"
+        # 差很多，写死 132px 会把英文裁成 "By IP Orde"
+        self.ping_sort.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.ping_sort.setToolTip(
             "按 IP 顺序：按 IP 数值升序（…1.9 排在 …1.10 前面）\n"
             "在线优先：在线的排前面，同组内仍按 IP 顺序\n"
@@ -2282,7 +2369,7 @@ class MainWindow(QMainWindow):
         g.addWidget(self.scan_weak, 4, 3, 1, 2)
         self.weak_dict_btn = QPushButton("探测设置…")
         self.weak_dict_btn.setObjectName("preset")
-        self.weak_dict_btn.setFixedWidth(96)
+        self.weak_dict_btn.setMinimumWidth(96)
         self.weak_dict_btn.setToolTip("字典（含按资产类型的预设）与 Web 登录探测参数")
         self.weak_dict_btn.clicked.connect(self._edit_weak_dict)
         g.addWidget(self.weak_dict_btn, 4, 5)
@@ -2654,8 +2741,9 @@ class MainWindow(QMainWindow):
         # 平台 / PowerShell 可用性提示
         ok, msg = wmi_tool.check_powershell()
         self.wmi_ready = ok and wmi_tool.is_windows()
-        tip = (f"环境就绪：{msg}" if self.wmi_ready else
-               f"当前环境不可执行 WMI 查询：{msg}（WMI 仅 Windows 支持，且需 PowerShell）")
+        self._wmi_env_msg = msg
+        tip = (i18n.T("环境就绪：{}").format(msg) if self.wmi_ready else
+               i18n.T("当前环境不可执行 WMI 查询：{}（WMI 仅 Windows 支持，且需 PowerShell）").format(msg))
         self.wmi_env = QLabel(tip)
         style_widget(self.wmi_env, "color:#15803d;" if self.wmi_ready else "color:#b45309;")
         self.wmi_env.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -2755,16 +2843,16 @@ class MainWindow(QMainWindow):
         self.syslog_host = QComboBox()
         self.syslog_host.setEditable(True)
         self.syslog_host.setMinimumWidth(235)
-        self.syslog_host.addItem(f"{syslog_engine.LOOPBACK_HOST}（仅本机）",
+        self.syslog_host.addItem(i18n.T("{}（仅本机）").format(syslog_engine.LOOPBACK_HOST),
                                  userData=syslog_engine.LOOPBACK_HOST)
-        self.syslog_host.addItem(f"{syslog_engine.WILDCARD_HOST}（所有网卡）",
+        self.syslog_host.addItem(i18n.T("{}（所有网卡）").format(syslog_engine.WILDCARD_HOST),
                                  userData=syslog_engine.WILDCARD_HOST)
         self.syslog_host.setToolTip(
             "默认只监听本机；接收网络设备日志时选本机网卡 IP（只在该网卡收包），"
             "或选 0.0.0.0（所有网卡）。该服务无认证，请勿在不可信网络开放。")
         g.addWidget(self.syslog_host, 0, 1, 1, 2)
         self.syslog_nic_btn = QPushButton("⟳ 网卡")
-        self.syslog_nic_btn.setFixedWidth(80)
+        self.syslog_nic_btn.setMinimumWidth(80)   # 英文 "⟳ NIC" 需 ~103px
         self.syslog_nic_btn.setToolTip("重新枚举本机网卡 IPv4 地址")
         self.syslog_nic_btn.clicked.connect(self._refresh_syslog_nics)
         g.addWidget(self.syslog_nic_btn, 0, 3)
@@ -2851,7 +2939,8 @@ class MainWindow(QMainWindow):
         v3_mode = self.snmp_version.currentData() == "3"
         self.snmp_v3_box.setVisible(v3_mode)
         self.snmp_community.setEnabled(not v3_mode)
-        self.snmp_community.setToolTip("SNMPv3 使用 USM 用户认证，不再使用 community" if v3_mode else "")
+        self.snmp_community.setToolTip(
+            i18n.T("SNMPv3 使用 USM 用户认证，不再使用 community") if v3_mode else "")
         level = self.snmp_v3_level.currentData()
         need_auth = level in ("authNoPriv", "authPriv")
         need_priv = level == "authPriv"
@@ -2865,6 +2954,9 @@ class MainWindow(QMainWindow):
         t.setHorizontalHeaderLabels(headers)
         header = t.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
+        # 记为「设计宽度」：切语言时按 max(设计宽度, 实测表头宽度) 重算，
+        # 英文放宽、切回中文还能落回原值
+        t.setProperty("_base_widths", list(widths))
         for i, wd in enumerate(widths):
             t.setColumnWidth(i, wd)
         if stretch_col is not None:
@@ -2958,7 +3050,7 @@ class MainWindow(QMainWindow):
         self.ping_feed.reset()
         self.ping_results.clear()
         self.ping_table.setRowCount(0)
-        self.ping_stats.setText(f"正在 Ping {len(hosts)} 个目标...")
+        self.ping_stats.setText(i18n.F("正在 Ping {} 个目标...", len(hosts)))
         self.ping_bar.setValue(0); self.ping_bar.setVisible(True)
         self._set_running("ping", True)
         w = PingWorker(hosts, self.ping_count.value(), self.ping_timeout.value(),
@@ -3019,11 +3111,12 @@ class MainWindow(QMainWindow):
         alive = bool(r.get("alive"))
         host_item = QTableWidgetItem(host)
         host_item.setData(Qt.UserRole, ip if alive else "")
-        host_item.setToolTip("双击扫描此 IP 端口" if alive else "")
+        host_item.setToolTip(i18n.T("双击扫描此 IP 端口") if alive else "")
         host_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         t.setItem(row, 0, host_item)
         st = "alive" if alive else "dead"
         txt, kind = STATUS_TEXT[st]
+        txt = i18n.T(txt)
         t.setItem(row, 1, status_item(txt, kind))
         for col, key in [(2, "resolved_ip"), (3, "loss"), (4, "min_ms"), (5, "avg_ms"), (6, "max_ms")]:
             v = r.get(key)
@@ -3078,10 +3171,10 @@ class MainWindow(QMainWindow):
             if issues:
                 QMessageBox.warning(
                     self, "端口:协议 格式有误",
-                    "以下片段无法识别：\n" + "、".join(issues) +
-                    "\n\n正确写法示例：3389:rdp, 2323:telnet, 9000:https\n"
-                    "支持的协议：ftp ssh telnet rdp smtp smtps http https mysql "
-                    "postgres redis mongodb es memcached docker smb vnc snmp")
+                    i18n.F("以下片段无法识别：{}\n\n正确写法示例：3389:rdp, 2323:telnet, "
+                           "9000:https\n支持的协议：ftp ssh telnet rdp smtp smtps http "
+                           "https mysql postgres redis mongodb es memcached docker smb "
+                           "vnc snmp", i18n.SEP().join(issues)))
                 return
         self._portmap = port_map
         # 外挂字典在每次开始扫描时重新读取（文件可能刚被改过），再与内置字典联合去重
@@ -3090,7 +3183,8 @@ class MainWindow(QMainWindow):
             if plan.missing:
                 ok = QMessageBox.question(
                     self, "外挂字典读取失败",
-                    "以下文件无法使用，本轮将跳过：\n" + "\n".join(plan.missing) + "\n\n是否继续扫描？")
+                    i18n.F("以下文件无法使用，本轮将跳过：\n{}\n\n是否继续扫描？",
+                           "\n".join(plan.missing)))
                 if ok != QMessageBox.Yes:
                     return
             if not plan.creds:
@@ -3113,14 +3207,15 @@ class MainWindow(QMainWindow):
         tip = ""
         if weak_on:
             if plan.files:
-                tip = (f"，随后探测弱口令（内置 {plan.base} 组 + 外挂 {len(plan.files)} 个文件"
-                       f" → {len(plan.creds)} 组）")
+                tip = i18n.F("，随后探测弱口令（内置 {} 组 + 外挂 {} 个文件 → {} 组）",
+                             plan.base, len(plan.files), len(plan.creds))
             else:
-                tip = f"，随后探测弱口令（字典 {len(plan.creds)} 组）"
+                tip = i18n.F("，随后探测弱口令（字典 {} 组）", len(plan.creds))
             if port_map:
-                tip += f"，{len(port_map)} 个自定义端口协议"
+                tip += i18n.F("，{} 个自定义端口协议", len(port_map))
         self.scan_stats.setText(
-            f"正在扫描 {len(hosts)} 主机 × {len(ports)} 端口 = {len(hosts)*len(ports)} 项{tip}...")
+            i18n.F("正在扫描 {} 主机 × {} 端口 = {} 项{}...",
+                   len(hosts), len(ports), len(hosts) * len(ports), tip))
         self.scan_bar.setValue(0); self.scan_bar.setVisible(True)
         self._set_running("scan", True)
         w = ScanWorker(hosts, ports, self.scan_proto.currentText(), self.scan_timeout.value(),
@@ -3167,10 +3262,10 @@ class MainWindow(QMainWindow):
             # 探测结论比端口行先到（skip 类几乎是瞬间返回），补写回去
             self._set_weak_cell(row, early)
         else:
-            weak_item = QTableWidgetItem("探测中…" if pending else "-")
+            weak_item = QTableWidgetItem(i18n.T("探测中…") if pending else "-")
             weak_item.setTextAlignment(Qt.AlignCenter)
             paint_item(weak_item, "fg:muted_weak")
-            weak_item.setToolTip("" if pending else "未做弱口令探测")
+            weak_item.setToolTip("" if pending else i18n.T("未做弱口令探测"))
             t.setItem(row, 4, weak_item)
         svc_text = r.get("service", "") or ""
         if svc_text in ("", "unknown"):
@@ -3183,7 +3278,7 @@ class MainWindow(QMainWindow):
         svc.setTextAlignment(Qt.AlignCenter)
         fp = r.get("fingerprint", "") or ""
         if fp:
-            svc.setToolTip(f"指纹命中：{fp}")
+            svc.setToolTip(i18n.F("指纹命中：{}", fp))
         t.setItem(row, 5, svc)
         banner_text = (f"[{fp}] " if fp else "") + (r.get("banner", "") or "-")
         # 横幅常带 CRLF（Telnet/FTP 多行欢迎语），单行展示避免撑破固定行高
@@ -3202,10 +3297,9 @@ class MainWindow(QMainWindow):
             plan = weakpass.build_creds(self.weak_base, self.weak_dicts, self.weak_dict_mode)
             ok = QMessageBox.question(
                 self, "弱口令探测",
-                "将用字典对开放端口尝试登录（FTP/SSH/Telnet/SMTP/HTTP/MySQL/PG/Redis…），"
-                "并检测未授权访问。\n\n"
-                f"{plan.summary()}\n\n"
-                "仅用于你已获得授权的资产；部分设备有账户锁定策略。是否继续？",
+                i18n.F("将用字典对开放端口尝试登录（FTP/SSH/Telnet/SMTP/HTTP/MySQL/PG/Redis…），"
+                       "并检测未授权访问。\n\n{}\n\n仅用于你已获得授权的资产；"
+                       "部分设备有账户锁定策略。是否继续？", plan.summary()),
             )
             if ok != QMessageBox.Yes:
                 self.scan_weak.blockSignals(True)
@@ -3229,12 +3323,13 @@ class MainWindow(QMainWindow):
         """把当前字典规模写进「探测设置…」的提示里，免得每次都要打开对话框确认。"""
         plan = self.weak_plan or weakpass.build_creds(self.weak_base, self.weak_dicts,
                                                      self.weak_dict_mode)
-        lines = ["字典（含按资产类型的预设）、外挂字典文件与 Web 登录探测参数",
+        lines = [i18n.T("字典（含按资产类型的预设）、外挂字典文件与 Web 登录探测参数"),
                  plan.summary()]
         if self.weak_dicts:
-            lines.append("外挂：" + "、".join(os.path.basename(p) for p in self.weak_dicts))
+            lines.append(i18n.T("外挂：{}").format(
+                i18n.SEP().join(os.path.basename(p) for p in self.weak_dicts)))
         if plan.missing:
-            lines.append("读取失败：" + "、".join(plan.missing))
+            lines.append(i18n.T("读取失败：") + i18n.SEP().join(plan.missing))
         self.weak_dict_btn.setToolTip("\n".join(lines))
         if plan.missing:
             style_widget(self.weak_dict_btn, "color:#c0392b;")
@@ -3249,15 +3344,17 @@ class MainWindow(QMainWindow):
         self.fp_files, self.fp_enabled = dlg.files, dlg.enabled
         rules = protocol_detect.rules_from_files(self.fp_files, self.fp_enabled)
         self.fp_rules = rules
-        tip = f"当前生效 {rules.count} 条规则（{len(rules.loaded_files)} 个来源）"
+        tip = i18n.T("当前生效 {} 条规则（{} 个来源）").format(
+            rules.count, len(rules.loaded_files))
         if self.fp_files:
-            tip += "\n外挂：" + "、".join(os.path.basename(p) for p in self.fp_files)
+            tip += "\n" + i18n.T("外挂：{}").format(
+                i18n.SEP().join(os.path.basename(p) for p in self.fp_files))
         self.fp_btn.setToolTip(tip)
         if rules.errors:
-            QMessageBox.warning(self, "部分规则未加载", "\n".join(rules.errors))
+            QMessageBox.warning(self, i18n.T("部分规则未加载"), "\n".join(rules.errors))
         else:
-            QMessageBox.information(self, "指纹库已更新",
-                                    f"已在后续扫描中生效：{tip}")
+            QMessageBox.information(self, i18n.T("指纹库已更新"),
+                                    i18n.T("已在后续扫描中生效：{}").format(tip))
 
     # ---- 报告导出（CSV / JSON） ----
     def _export_table(self, kind: str, title: str, table, meta: dict) -> bool:
@@ -3287,9 +3384,9 @@ class MainWindow(QMainWindow):
             else:
                 n = report.write_csv(path, headers, rows, meta)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "导出失败", f"无法写入 {path}：\n{exc}")
+            QMessageBox.warning(self, "导出失败", i18n.F("无法写入 {}：\n{}", path, exc))
             return False
-        QMessageBox.information(self, "导出完成", f"已导出 {n} 行到：\n{path}")
+        QMessageBox.information(self, "导出完成", i18n.F("已导出 {} 行到：\n{}", n, path))
         return True
 
     def _export_ping(self):
@@ -3368,8 +3465,9 @@ class MainWindow(QMainWindow):
         self.wmi_run.setEnabled(True)
         err = data.get("error", "")
         if err:
-            self.wmi_stats.setText(
-                f'<font color="{theme.current()["bad_fg"]}">查询失败：</font>{err}')
+            self.wmi_stats.setText(i18n.F(
+                '<font color="{}">查询失败：</font>{}',
+                theme.current()["bad_fg"], err))
             self.wmi_table.setRowCount(0)
             return
         cols = data.get("columns", [])
@@ -3394,8 +3492,9 @@ class MainWindow(QMainWindow):
         self.wmi_table.setSortingEnabled(True)
         proto = str(data.get("protocol", "") or "").lower()
         via = {"dcom": " · DCOM", "wsman": " · WinRM"}.get(proto, "")
-        self.wmi_stats.setText(
-            f"查询完成：{len(rows)} 行 / {len(cols)} 列 · 耗时 {data.get('elapsed', 0):.2f} 秒{via}")
+        self.wmi_stats.setText(i18n.F(
+            "查询完成：{} 行 / {} 列 · 耗时 {} 秒{}",
+            len(rows), len(cols), f"{data.get('elapsed', 0):.2f}", via))
         self._replay_filter(self.wmi_table, self.wmi_filter, set(range(len(cols))))
 
     def _clear_wmi(self):
@@ -3471,12 +3570,12 @@ class MainWindow(QMainWindow):
         if host == syslog_engine.WILDCARD_HOST:
             ips = self._syslog_nic_items()
             if ips:
-                shown = "、".join(ips[:4]) + ("…" if len(ips) > 4 else "")
-                return f"所有网卡 · 设备侧可指向 {shown}"
-            return "所有网卡"
+                shown = i18n.SEP().join(ips[:4]) + ("…" if len(ips) > 4 else "")
+                return i18n.T("所有网卡 · 设备侧可指向 {}").format(shown)
+            return i18n.T("所有网卡")
         if host == syslog_engine.LOOPBACK_HOST:
-            return "仅本机 · 等待日志…"
-        return "等待日志…"
+            return i18n.T("仅本机 · 等待日志…")
+        return i18n.T("等待日志…")
 
     @Slot()
     def _refresh_syslog_nics(self):
@@ -3488,7 +3587,7 @@ class MainWindow(QMainWindow):
             # 不标记「已扫描」：ipconfig 偶发失败（杀软拦截、系统繁忙）时，
             # 下次进页签还能再试，否则下拉里永远只剩 127.0.0.1 / 0.0.0.0。
             if not self.syslog_receiver.running:
-                self.syslog_stats.setText(f"网卡识别失败：{exc}")
+                self.syslog_stats.setText(i18n.T("网卡识别失败：{}").format(exc))
             return
 
         seen: list[str] = []
@@ -3500,12 +3599,13 @@ class MainWindow(QMainWindow):
 
         self.syslog_host.blockSignals(True)
         self.syslog_host.clear()
-        self.syslog_host.addItem(f"{syslog_engine.LOOPBACK_HOST}（仅本机）",
+        self.syslog_host.addItem(i18n.T("{}（仅本机）").format(syslog_engine.LOOPBACK_HOST),
                                  userData=syslog_engine.LOOPBACK_HOST)
-        self.syslog_host.addItem(f"{syslog_engine.WILDCARD_HOST}（所有网卡）",
+        self.syslog_host.addItem(i18n.T("{}（所有网卡）").format(syslog_engine.WILDCARD_HOST),
                                  userData=syslog_engine.WILDCARD_HOST)
         for n in nets:
-            label = f"{n.ip}（{n.name}）"
+            # 全角括号是中文标点：英文界面里应是 "ip (adapter name)"
+            label = i18n.F("{}（{}）", n.ip, i18n.adapter_name(n.name))
             if self.syslog_host.findData(n.ip) < 0 and \
                     not any(self.syslog_host.itemText(i) == label
                             for i in range(self.syslog_host.count())):
@@ -3517,19 +3617,19 @@ class MainWindow(QMainWindow):
             self.syslog_host.setEditText(current)
         self.syslog_host.blockSignals(False)
 
-        tip = ("默认只监听本机；接收网络设备日志时选本机网卡 IP（只在该网卡收包），"
-               "或选 0.0.0.0（所有网卡）。该服务无认证，请勿在不可信网络开放。")
+        tip = (i18n.T("默认只监听本机；接收网络设备日志时选本机网卡 IP（只在该网卡收包），"
+                      "或选 0.0.0.0（所有网卡）。该服务无认证，请勿在不可信网络开放。"))
         if seen:
-            tip += "\n本机地址：" + "、".join(seen)
+            tip += "\n" + i18n.T("本机地址：{}").format(i18n.SEP().join(seen))
         self.syslog_host.setToolTip(tip)
 
         if not self.syslog_receiver.running:
             if seen:
                 self.syslog_stats.setText(
-                    f"服务未启动 · 已识别 {len(seen)} 个本机地址 · 默认 UDP 1514")
+                    i18n.T("服务未启动 · 已识别 {} 个本机地址 · 默认 UDP 1514").format(len(seen)))
             else:
                 self.syslog_stats.setText(
-                    "服务未启动 · 未识别到活动网卡（仅可监听本机）")
+                    i18n.T("服务未启动 · 未识别到活动网卡（仅可监听本机）"))
 
     # ---------- v10.10：Syslog 存储后端 ----------
     def _make_syslog_store(self, cfg: dict):
@@ -3549,10 +3649,10 @@ class MainWindow(QMainWindow):
         try:
             text = syslog_storage.describe(self.syslog_storage_cfg)
         except Exception as exc:
-            text = f"存储配置异常：{exc}"
+            text = i18n.T("存储配置异常：") + str(exc)
         if self.syslog_store_error:
-            text += f"　⚠ 已回退本地 SQLite：{self.syslog_store_error}"
-        label.setText("存储：" + text)
+            text += "　⚠ " + i18n.T("已回退本地 SQLite：{}").format(self.syslog_store_error)
+        label.setText(i18n.T("存储：") + text)
         label.setToolTip(text)
 
     def _apply_syslog_storage(self):
@@ -3595,13 +3695,15 @@ class MainWindow(QMainWindow):
         if self.syslog_store_error:
             QMessageBox.warning(
                 self, "存储后端不可用",
-                f"{self.syslog_store_error}\n\n已临时回退到本地 SQLite，日志仍可接收。")
+                i18n.F("{}\n\n已临时回退到本地 SQLite，日志仍可接收。",
+                       self.syslog_store_error))
         host = self._syslog_bind_addr()
         if not host:
             QMessageBox.warning(
                 self, "监听地址不合法",
-                f"「{self.syslog_host.currentText()}」不是合法的 IP 地址。\n"
-                "请从下拉列表选择本机网卡，或手动输入 IPv4 地址（如 192.168.1.10）。")
+                i18n.F("「{}」不是合法的 IP 地址。\n"
+                       "请从下拉列表选择本机网卡，或手动输入 IPv4 地址（如 192.168.1.10）。",
+                       self.syslog_host.currentText()))
             return
         try:
             self.syslog_receiver.start(
@@ -3612,8 +3714,9 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(
                 self, "服务启动失败",
-                f"无法监听 {host}:{self.syslog_port.value()}：\n{exc}\n\n"
-                "请检查端口是否被占用、该地址是否属于本机，或改用其它端口（如 1514、5140）。")
+                i18n.F("无法监听 {}:{}：\n{}\n\n请检查端口是否被占用、"
+                       "该地址是否属于本机，或改用其它端口（如 1514、5140）。",
+                       host, self.syslog_port.value(), exc))
             return
         self.syslog_store.retention_days = self.syslog_retention.value()
         self.syslog_alerts.reset()
@@ -3621,8 +3724,9 @@ class MainWindow(QMainWindow):
         self.syslog_start.setEnabled(False)
         self.syslog_stop.setEnabled(True)
         self.syslog_stats.setText(
-            f"服务运行中：{self.syslog_proto.currentText().upper()} "
-            f"{host}:{self.syslog_port.value()} · {self._syslog_bind_hint(host)}")
+            i18n.T("服务运行中：{} {}:{} · {}").format(
+                self.syslog_proto.currentText().upper(),
+                host, self.syslog_port.value(), self._syslog_bind_hint(host)))
 
     def _syslog_stop(self):
         if not self.syslog_receiver.running:
@@ -3633,12 +3737,12 @@ class MainWindow(QMainWindow):
         self.syslog_stop.setEnabled(False)
         st = self.syslog_receiver.stats
         self.syslog_stats.setText(
-            f"服务已停止 · 接收 {st.get('received', 0)} / 解析 {st.get('parsed', 0)} / "
-            f"丢弃 {st.get('dropped', 0)} 条")
+            i18n.T("服务已停止 · 接收 {} / 解析 {} / 丢弃 {} 条").format(
+                st.get('received', 0), st.get('parsed', 0), st.get('dropped', 0)))
 
     def _syslog_send_test(self):
         if not self.syslog_receiver.running:
-            QMessageBox.information(self, "服务未启动", "请先启动 Syslog 服务。")
+            QMessageBox.information(self, i18n.T("服务未启动"), i18n.T("请先启动 Syslog 服务。"))
             return
         try:
             # 绑在具体网卡时发往该网卡地址，才算真正验证这条链路可用；
@@ -3648,15 +3752,16 @@ class MainWindow(QMainWindow):
                 self.syslog_port.value(), target, self.syslog_proto.currentText(), count=6)
         except Exception as exc:
             QMessageBox.warning(self, "发送失败", str(exc)); return
-        QMessageBox.information(self, "测试日志已发送",
-                                f"已向 {target}:{self.syslog_port.value()} 发送 {n} 条测试日志。")
+        QMessageBox.information(self, i18n.T("测试日志已发送"),
+                                i18n.T("已向 {}:{} 发送 {} 条测试日志。").format(
+                                    target, self.syslog_port.value(), n))
 
     def _syslog_prune(self):
         try:
             n = self.syslog_store.prune()
         except Exception as exc:
             QMessageBox.warning(self, "清理失败", str(exc)); return
-        QMessageBox.information(self, "清理完成", f"已删除 {n} 条过期日志。")
+        QMessageBox.information(self, i18n.T("清理完成"), i18n.T("已删除 {} 条过期日志。").format(n))
 
     def _open_syslog_history(self):
         dlg = SyslogHistoryDialog(self.syslog_store, self)
@@ -3686,10 +3791,10 @@ class MainWindow(QMainWindow):
         st = self.syslog_receiver.stats
         counts = self.syslog_store.counts()
         self.syslog_stats.setText(
-            f"服务运行中 · 接收 {st.get('received', 0)} / 解析 {st.get('parsed', 0)} / "
-            f"丢弃 {st.get('dropped', 0)} · 存储 {counts.get('total', 0)} 条 · "
-            f"预警 {self.syslog_alerts.stats().get('fired', 0)} 次"
-            + ("　⚠ 存储异常，已回退本地库" if self.syslog_store_error else ""))
+            i18n.T("服务运行中 · 接收 {} / 解析 {} / 丢弃 {} · 存储 {} 条 · 预警 {} 次").format(
+                st.get('received', 0), st.get('parsed', 0), st.get('dropped', 0),
+                counts.get('total', 0), self.syslog_alerts.stats().get('fired', 0))
+            + ("　⚠ " + i18n.T("存储异常，已回退本地库") if self.syslog_store_error else ""))
 
     def _append_syslog_rows(self, events):
         t = self.syslog_table
@@ -3707,7 +3812,9 @@ class MainWindow(QMainWindow):
             sev_kind = "fg:bad" if sev in ("crit", "alert", "emerg", "err") else (
                 "fg:warn" if sev == "warning" else "fg:text_soft")
             for c, val in enumerate(values):
-                item = QTableWidgetItem(str(val))
+                # 分类名是内置词条（「系统告警」等）：日志在运行中源源写入，
+                # 不在写入时翻译，英文界面下就会一直冒出中文。
+                item = QTableWidgetItem(i18n.T(str(val)) if c == 6 else str(val))
                 if c == 3:
                     paint_item(item, sev_kind)
                 t.setItem(r, c, item)
@@ -3791,13 +3898,17 @@ class MainWindow(QMainWindow):
             text, kind = f"! {detail}", "warn_soft"
         else:
             text, kind = detail, "muted"
-        item = QTableWidgetItem(text)
+        item = QTableWidgetItem(i18n.PT(text))
+        # 存中文原文：说明是拼出来的动态句，靠译文反查不回去
+        item.setData(i18n.ORIG_ROLE, text)
         item.setTextAlignment(Qt.AlignCenter)
         paint_item(item, kind)
         if status in ("weak", "open"):
             item.setFont(QFont("Microsoft YaHei", 9, QFont.Bold))
-        item.setToolTip(f"{weakpass.CHECKER_LABEL.get(data.get('service', ''), data.get('service', ''))}"
-                        f" · {status}\n{detail}")
+        tip = (f"{weakpass.CHECKER_LABEL.get(data.get('service', ''), data.get('service', ''))}"
+               f" · {status}\n{detail}")
+        item.setData(i18n.ORIG_TIP_ROLE, tip)
+        item.setToolTip(i18n.PT(tip))
         self.scan_table.setItem(row, 4, item)
 
     @Slot(object, bool)
@@ -3840,7 +3951,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "输入错误", "请输入目标主机或 IP"); return
         self.trace_table.setRowCount(0)
         self.trace_table.setSortingEnabled(False)
-        self.trace_stats.setText(f"正在跟踪到 {target} 的路由...")
+        self.trace_stats.setText(i18n.F("正在跟踪到 {} 的路由...", target))
         self.trace_bar.setValue(0)
         self.trace_bar.setMaximum(self.trace_hops.value())
         self.trace_bar.setVisible(True)
@@ -3868,7 +3979,7 @@ class MainWindow(QMainWindow):
         ip = h.get("ip", "")
         ip_item = QTableWidgetItem(ip or "-")
         ip_item.setData(Qt.UserRole, ip)
-        ip_item.setToolTip("双击扫描此 IP 端口" if ip else "")
+        ip_item.setToolTip(i18n.T("双击扫描此 IP 端口") if ip else "")
         ip_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         t.setItem(row, 1, ip_item)
         host_item = QTableWidgetItem(h.get("host", "") or "-")
@@ -3884,6 +3995,7 @@ class MainWindow(QMainWindow):
             t.setItem(row, col, item)
         ok = h.get("status") == "ok"
         txt, kind = STATUS_TEXT["respond" if ok else "timeout"]
+        txt = i18n.T(txt)
         t.setItem(row, 7, status_item(txt, kind))
 
     @Slot(object, bool)
@@ -3896,12 +4008,12 @@ class MainWindow(QMainWindow):
         if cancelled:
             set_stats(self.trace_stats, [
                 ("状态", "已停止"),
-                ("跟踪跳数", f"{len(results)} 跳"),
+                ("跟踪跳数", i18n.F("{} 跳", len(results))),
             ])
         else:
             set_stats(self.trace_stats, [
                 ("目标", str(self.trace_target.text().strip())),
-                ("跟踪跳数", f"{len(results)} 跳"),
+                ("跟踪跳数", i18n.F("{} 跳", len(results))),
                 ("响应跳数", str(ok)),
                 ("终点 IP", last or "-"),
             ])
@@ -3919,7 +4031,8 @@ class MainWindow(QMainWindow):
         self.dig_table.setRowCount(0)
         self.dig_table.setSortingEnabled(False)
         self.dig_detail.clear()
-        self.dig_stats.setText(f"正在查询 {domain} {self.dig_rtype.currentText()} ...")
+        self.dig_stats.setText(i18n.F("正在查询 {} {} ...", domain,
+                                          self.dig_rtype.currentText()))
         self._set_running("dig", True)
         w = DigWorker(domain, self.dig_rtype.currentText(), self.dig_server.text(),
                       self.dig_timeout.value())
@@ -4004,7 +4117,7 @@ class MainWindow(QMainWindow):
         try:
             results = oid_store.import_mib_files(paths)
         except Exception as exc:
-            QMessageBox.critical(self, "导入失败", f"解析 MIB 失败：{exc}")
+            QMessageBox.critical(self, "导入失败", i18n.F("解析 MIB 失败：{}", exc))
             return
         report_mib_import(self, results)
 
@@ -4044,10 +4157,10 @@ class MainWindow(QMainWindow):
         oid = self._resolve_snmp_oid()
         if not re.fullmatch(r"\d+(\.\d+)+", oid):
             QMessageBox.warning(self, "输入错误",
-                                f"起始 OID 无法识别：{oid}\n"
-                                "可填点分 OID（1.3.6.1.2.1.1）、对象名（sysUpTime）"
-                                "或名称+索引（ifDescr.1）\n对象名需在「OID 映射」里能查到"
-                                "（导入对应 MIB 后可识别厂商 OID）")
+                                i18n.F("起始 OID 无法识别：{}\n"
+                                       "可填点分 OID（1.3.6.1.2.1.1）、对象名（sysUpTime）"
+                                       "或名称+索引（ifDescr.1）\n对象名需在「OID 映射」里能查到"
+                                       "（导入对应 MIB 后可识别厂商 OID）", oid))
             return
         community = self.snmp_community.text().strip()
         version = self.snmp_version.currentData()
@@ -4076,7 +4189,7 @@ class MainWindow(QMainWindow):
         self.snmp_filter.clear()
         self._snmp_last = None
         self.snmp_stats.setToolTip("")
-        self.snmp_stats.setText(f"正在查询 {target} 的 {oid} ...")
+        self.snmp_stats.setText(i18n.F("正在查询 {} 的 {} ...", target, oid))
         self.snmp_bar.setRange(0, 0)
         self.snmp_bar.setVisible(True)
         self._set_running("snmp", True)
@@ -4094,8 +4207,8 @@ class MainWindow(QMainWindow):
     def _on_snmp_batch(self, rows, count):
         for r in rows:
             self.snmp_feed.push(r)
-        self.snmp_stats.setText(
-            f"正在查询 {self.snmp_target.text().strip()} ... 已获取 {count} 行")
+        self.snmp_stats.setText(i18n.F(
+            "正在查询 {} ... 已获取 {} 行", self.snmp_target.text().strip(), count))
 
     def _append_snmp_row(self, r):
         """单条立即写入（脚本/测试走这里）。"""
@@ -4183,8 +4296,9 @@ class MainWindow(QMainWindow):
             if not rows:
                 self.snmp_stats.setText(
                     stats_html(items)
-                    + f'<br><font color="{theme.current()["warn_fg"]}">该 OID 下没有返回数据：'
-                      '可能设备未实现该分支，或该账号只有部分视图权限。</font>')
+                    + f'<br><font color="{theme.current()["warn_fg"]}">'
+                      + i18n.T("该 OID 下没有返回数据：可能设备未实现该分支，"
+                               "或该账号只有部分视图权限。") + "</font>")
             self.snmp_stats.setToolTip(descr)
 
         if rows:
@@ -4265,26 +4379,26 @@ class MainWindow(QMainWindow):
         if kind == "ping":
             self.ping_run.setEnabled(not running)
             self.ping_stop.setEnabled(running)
-            self.ping_run.setText("运行中..." if running else "开始 Ping")
+            self.ping_run.setText(i18n.T("运行中...") if running else i18n.T("开始 Ping"))
             self.ping_bar.setVisible(running)
         elif kind == "scan":
             self.scan_run.setEnabled(not running)
             self.scan_stop.setEnabled(running)
-            self.scan_run.setText("扫描中..." if running else "开始扫描")
+            self.scan_run.setText(i18n.T("扫描中...") if running else i18n.T("开始扫描"))
             self.scan_bar.setVisible(running)
         elif kind == "trace":
             self.trace_run.setEnabled(not running)
             self.trace_stop.setEnabled(running)
-            self.trace_run.setText("跟踪中..." if running else "开始跟踪")
+            self.trace_run.setText(i18n.T("跟踪中...") if running else i18n.T("开始跟踪"))
             self.trace_bar.setVisible(running)
         elif kind == "snmp":
             self.snmp_run.setEnabled(not running)
             self.snmp_stop.setEnabled(running)
-            self.snmp_run.setText("查询中..." if running else "开始查询")
+            self.snmp_run.setText(i18n.T("查询中...") if running else i18n.T("开始查询"))
             self.snmp_bar.setVisible(running)
         else:
             self.dig_run.setEnabled(not running)
-            self.dig_run.setText("查询中..." if running else "开始查询")
+            self.dig_run.setText(i18n.T("查询中...") if running else i18n.T("开始查询"))
 
     def _stop_ping(self):
         if self.ping_worker:
@@ -4321,12 +4435,14 @@ class MainWindow(QMainWindow):
         try:
             nets = local_networks()
         except Exception as exc:
-            self.net_hint.setText("识别失败"); return
+            self.net_hint.setText(i18n.T("识别失败")); return
         self.net_select.clear()
-        self.net_select.addItem("选择本机网段填入...")
+        # 这两处在按钮回调里动态生成：不走 T() 的话，切到英文后
+        # 再点一次「识别本机网卡」就会把中文塞回去（重翻译只发生在切换瞬间）
+        self.net_select.addItem(i18n.T("选择本机网段填入..."))
         for n in nets:
-            self.net_select.addItem(f"{n.name}  {n.ip} → {n.cidr}", userData=n.cidr)
-        self.net_hint.setText(f"识别到 {len(nets)} 个 IP")
+            self.net_select.addItem(f"{i18n.adapter_name(n.name)}  {n.ip} → {n.cidr}", userData=n.cidr)
+        self.net_hint.setText(i18n.F("识别到 {} 个 IP", len(nets)))
         self.net_select.setEnabled(bool(nets))
 
     @Slot(str)
@@ -4362,8 +4478,9 @@ class MainWindow(QMainWindow):
         hl.addWidget(line_edit, 1)
         btn = QPushButton("Ping 结果 ▾")
         btn.setObjectName("preset")
-        btn.setFixedWidth(96)
-        btn.setToolTip(f"从批量 Ping 的在线结果中选一个 IP 填入{kind}目标")
+        btn.setMinimumWidth(96)          # 英文 "Ping Results ▾" 比中文长，不能写死
+        btn.setToolTip(i18n.F("从批量 Ping 的在线结果中选一个 IP 填入{}目标",
+                             i18n.T(kind)))
         btn.clicked.connect(lambda _=False, b=btn, e=line_edit, k=kind:
                             self._show_ping_picker(b, e, k))
         hl.addWidget(btn)
@@ -4401,8 +4518,9 @@ class MainWindow(QMainWindow):
                                lambda _=False, v=ip, e=line_edit, k=kind:
                                self._set_target_from_ping(e, v, k))
             if len(choices) > limit:
-                act = menu.addAction(
-                    f"仅显示前 {limit} 个（共 {len(choices)} 个，可先用 Ping 过滤器缩小）")
+                act = menu.addAction(i18n.F(
+                    "仅显示前 {} 个（共 {} 个，可先用 Ping 过滤器缩小）",
+                    limit, len(choices)))
                 act.setEnabled(False)
         menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
@@ -4443,15 +4561,15 @@ class MainWindow(QMainWindow):
         ip = host_item.data(Qt.UserRole) if host_item else ""
         menu = QMenu(self.ping_table)
         if not ip:
-            act = menu.addAction("该主机未在线，无法作为目标")
+            act = menu.addAction(i18n.T("该主机未在线，无法作为目标"))
             act.setEnabled(False)
         else:
-            menu.addAction(f"扫描 {ip} 的端口",
+            menu.addAction(i18n.F("扫描 {} 的端口", ip),
                            lambda _=False, v=ip: self._send_ping_ip("scan", v))
             menu.addSeparator()
-            menu.addAction(f"设为 SNMP 目标：{ip}",
+            menu.addAction(i18n.F("设为 SNMP 目标：{}", ip),
                            lambda _=False, v=ip: self._send_ping_ip("snmp", v))
-            menu.addAction(f"设为 WMI 目标：{ip}",
+            menu.addAction(i18n.F("设为 WMI 目标：{}", ip),
                            lambda _=False, v=ip: self._send_ping_ip("wmi", v))
         menu.exec(self.ping_table.viewport().mapToGlobal(pos))
 
@@ -4644,6 +4762,22 @@ def _app_icon() -> QIcon:
             if not icon.isNull():
                 return icon
     return QIcon()
+
+
+# v10.13：多语言——对话框 UI 构建完成后按当前语言重翻译（覆盖全部 QDialog 子类）。
+_orig_dialog_init = QDialog.__init__
+
+
+def _i18n_dialog_init(self, *args, **kwargs):
+    _orig_dialog_init(self, *args, **kwargs)
+    if i18n.current() != i18n.ZH:
+        def _translate(w=self):
+            i18n.retranslate_widget(w)
+            i18n.fit_table_columns(w)      # 英文表头更宽，按实测宽度补足
+        QTimer.singleShot(0, _translate)
+
+
+QDialog.__init__ = _i18n_dialog_init
 
 
 def main():

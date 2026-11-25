@@ -1,8 +1,8 @@
-"""构建 v10.12 发行产物：
+"""构建 v10.13.5 发行产物：
 
 1. build/payload.zip        —— 安装程序内嵌载荷（根级，装完直接落在安装目录）
-2. dist/NetDiagSetup-10.12.exe —— 单文件安装程序（含卸载器）
-3. dist/NetDiag_v10.12_portable.zip —— 便携版压缩包（解压即用）
+2. dist/NetDiagSetup-10.13.5.exe —— 单文件安装程序（含卸载器）
+3. dist/NetDiag_v10.13.5_portable.zip —— 便携版压缩包（解压即用）
 
 用法：python tools/build_release.py
 """
@@ -16,7 +16,7 @@ import time
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = "10.12"
+VERSION = "10.13.5"
 # onedir 产物目录；可用 NETDIAG_APP_DIR 指向别处（dist/NetDiag 被占用时先构建到 build/onedir）
 APP_DIR = os.path.abspath(os.environ.get("NETDIAG_APP_DIR")
                           or os.path.join(ROOT, "dist", "NetDiag"))
@@ -28,6 +28,55 @@ PAYLOAD = os.path.join(ROOT, "build", "payload.zip")
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+def copy_tree(src: str, dst: str) -> None:
+    """复制目录；Windows 上优先用 robocopy 多线程。
+
+    杀软实时扫描或后台程序抢 IO 时，``shutil.copytree`` 复制 233 个文件能慢到
+    十几分钟（实测 0.3 个/秒），robocopy 的 /MT 并发复制同一批文件只需几秒。
+    robocopy 退出码 0–7 都表示成功（1=复制了文件，2=有额外项，3=两者），
+    8 以上才是失败，此时再回落到 copytree。
+    """
+    if sys.platform == "win32":
+        os.makedirs(dst, exist_ok=True)
+        r = subprocess.run(
+            # /R:2 /W:2：默认是重试百万次、每次等 30 秒，遇到被占用的文件会假死
+            ["robocopy", src, dst, "/E", "/MT:16", "/R:2", "/W:2",
+             "/NFL", "/NDL", "/NJH", "/NJS", "/nc", "/ns", "/np"],
+            capture_output=True, text=True, errors="replace")
+        if r.returncode < 8:
+            return
+        log(f"robocopy 失败（{r.returncode}），回落到 copytree: {r.stdout[-200:]}")
+    shutil.copytree(src, dst, dirs_exist_ok=True)
+
+
+def zip_sources(dst: str, app_dir: str, extras: list[tuple[str, str]]) -> tuple[int, int]:
+    """把主程序目录与若干额外文件/目录打进同一个 zip。
+
+    不再先把 233 个文件复制到暂存目录：在开了实时保护（或沙箱审计）的机器上
+    「批量新建文件」会被逐个拦截，复制 233 个文件能拖到十几分钟；而直接读源
+    目录写一个 zip 只需十几秒。zip 内路径以 app_dir 为根。
+    """
+    n = 0
+    with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+        for base, _, files in os.walk(app_dir):
+            for f in files:
+                p = os.path.join(base, f)
+                z.write(p, os.path.relpath(p, app_dir).replace("\\", "/"))
+                n += 1
+        for src, arc in extras:
+            if os.path.isfile(src):
+                z.write(src, arc.replace("\\", "/"))
+                n += 1
+            elif os.path.isdir(src):
+                for base, _, files in os.walk(src):
+                    for f in files:
+                        p = os.path.join(base, f)
+                        rel = os.path.relpath(p, src).replace("\\", "/")
+                        z.write(p, f"{arc}/{rel}".replace("\\", "/"))
+                        n += 1
+    return n, os.path.getsize(dst)
 
 
 def zip_dir(src: str, dst: str, root_prefix: str = "") -> tuple[int, int]:
@@ -74,29 +123,18 @@ def main() -> int:
         log(str(exc))
         return 1
 
-    # 1) 暂存：主程序 + 卸载器 + 文档
-    log("整理暂存目录")
-    shutil.rmtree(STAGE, ignore_errors=True)
-    app = os.path.join(STAGE, "app")
-    shutil.copytree(APP_DIR, app)
-    shutil.copy(uninst, os.path.join(app, "uninstall.exe"))
-    shutil.copy(os.path.join(ROOT, "README.md"), os.path.join(app, "README.md"))
-    shutil.copy(os.path.join(ROOT, "assets", "使用说明.txt"), os.path.join(app, "使用说明.txt"))
-    # 示例字典放根级（PyInstaller 6 会把 datas 塞进 _internal，用户不好找）
-    dicts_src = os.path.join(ROOT, "dicts")
-    if os.path.isdir(dicts_src):
-        shutil.copytree(dicts_src, os.path.join(app, "dicts"), dirs_exist_ok=True)
-    fp_src = os.path.join(ROOT, "fingerprints")
-    if os.path.isdir(fp_src):
-        shutil.copytree(fp_src, os.path.join(app, "fingerprints"), dirs_exist_ok=True)
-    # v10.5：WMI 预设 / Syslog 规则放根级，方便用户直接编辑外挂
-    for sub in ("wmi", "syslog"):
+    # 1) 载荷：直接从主程序目录打包，不落暂存目录（见 zip_sources 说明）
+    extras = [(uninst, "uninstall.exe"),
+              (os.path.join(ROOT, "README.md"), "README.md"),
+              (os.path.join(ROOT, "assets", "使用说明.txt"), "使用说明.txt")]
+    # 示例字典 / 指纹 / WMI 预设 / Syslog 规则放根级，方便用户直接编辑。
+    # 主程序包里可能已经带了同名目录（spec 的 datas），那就别再写一遍：
+    # 重复条目会触发 zipfile 的 Duplicate name 警告，解压时还会同名覆盖。
+    for sub in ("dicts", "fingerprints", "wmi", "syslog"):
         sub_src = os.path.join(ROOT, sub)
-        if os.path.isdir(sub_src):
-            shutil.copytree(sub_src, os.path.join(app, sub), dirs_exist_ok=True)
-
-    # 2) 安装载荷
-    n, size = zip_dir(app, PAYLOAD)
+        if os.path.isdir(sub_src) and not os.path.isdir(os.path.join(APP_DIR, sub)):
+            extras.append((sub_src, sub))
+    n, size = zip_sources(PAYLOAD, APP_DIR, extras)
     log(f"载荷 {n} 个文件 -> {size / 1048576:.1f} MB")
 
     # 3) 安装程序
@@ -122,21 +160,7 @@ def main() -> int:
     log(f"安装程序 -> dist/{SETUP_NAME}  {os.path.getsize(target) / 1048576:.1f} MB")
 
     # 4) 便携版（解压出 NetDiag 文件夹即可用，不带卸载器）
-    portable_src = os.path.join(STAGE, "portable", "NetDiag")
-    shutil.rmtree(os.path.join(STAGE, "portable"), ignore_errors=True)
-    shutil.copytree(APP_DIR, portable_src)
-    shutil.copy(os.path.join(ROOT, "README.md"), os.path.join(portable_src, "README.md"))
-    shutil.copy(os.path.join(ROOT, "assets", "使用说明.txt"),
-                os.path.join(portable_src, "使用说明.txt"))
-    if os.path.isdir(dicts_src):
-        shutil.copytree(dicts_src, os.path.join(portable_src, "dicts"), dirs_exist_ok=True)
-    if os.path.isdir(fp_src):
-        shutil.copytree(fp_src, os.path.join(portable_src, "fingerprints"), dirs_exist_ok=True)
-    for sub in ("wmi", "syslog"):
-        sub_src = os.path.join(ROOT, sub)
-        if os.path.isdir(sub_src):
-            shutil.copytree(sub_src, os.path.join(portable_src, sub), dirs_exist_ok=True)
-    n, size = zip_dir(os.path.join(STAGE, "portable"), PORTABLE, root_prefix="")
+    n, size = zip_sources(PORTABLE, APP_DIR, [e for e in extras if e[0] != uninst])
     log(f"便携版 {n} 个文件 -> dist/{os.path.basename(PORTABLE)}  {size / 1048576:.1f} MB")
     return 0
 

@@ -27,10 +27,11 @@ from ctypes import wintypes as wt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import win32ui as ui  # noqa: E402
+from win_lang import T as L  # noqa: E402
 
-APP_NAME = "NetDiag 网络诊断工具"
+APP_NAME = L("app")
 EXE_NAME = "NetDiag.exe"
-LNK_NAME = "NetDiag 网络诊断工具.lnk"
+LNK_NAME = L("lnk") + ".lnk"
 REG_APP = r"Software\NetDiag"
 REG_UNINST = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\NetDiag"
 KEY_READ64 = winreg.KEY_READ | winreg.KEY_WOW64_64KEY
@@ -77,6 +78,9 @@ def remove_tree(path: str) -> None:
     if not os.path.isdir(path):
         log(f"目录不存在，跳过 {path}")
         return
+    if _too_broad(path):
+        log(f"拒绝删除过宽的目录 {path}")
+        return
     for attempt in range(1, 4):
         try:
             shutil.rmtree(path, ignore_errors=False)
@@ -90,10 +94,59 @@ def remove_tree(path: str) -> None:
     log(f"兜底删除后仍存在={os.path.isdir(path)} {path}")
 
 
-def delete_registry() -> None:
-    """HKLM（全机器安装）与 HKCU（旧版/免权限安装）都清一遍。"""
+def _delete_key_tree(root: int, key: str) -> bool:
+    """递归删除注册表树并返回是否删净。
+
+    ``Software\\NetDiag`` 下会有 QSettings 建的子键（如 ``NetDiag``），
+    单次 ``DeleteKeyEx`` 会因「还有子键」失败，这里自底向上清一遍。
+    """
+    def walk(path: str) -> bool:
+        subs: list[str] = []
+        try:
+            with winreg.OpenKey(root, path, 0, KEY_READ64) as k:
+                i = 0
+                while True:
+                    try:
+                        subs.append(winreg.EnumKey(k, i))
+                    except OSError:
+                        break
+                    i += 1
+        except FileNotFoundError:
+            return True                     # 已不存在即算成功
+        except OSError:
+            return False
+        ok = True
+        for sub in subs:
+            ok = walk(path + "\\" + sub) and ok
+        try:
+            winreg.DeleteKeyEx(root, path, winreg.KEY_WOW64_64KEY, 0)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            ok = False
+        return ok
+
+    return walk(key)
+
+
+def delete_registry(target: str) -> None:
+    """只清理指向本次安装目录的那套注册表。
+
+    机器上可能同时装着「Program Files 里的旧版（HKLM）」和「用户目录里的新版
+    （HKCU）」。无差别删两边会让另一份安装从「设置 → 应用」里消失、丢掉卸载
+    入口，所以先比对 InstallPath，只有指向本次目标的那套才动。
+    """
+    want = os.path.normcase(os.path.abspath(target))
     for root, root_name in ((winreg.HKEY_LOCAL_MACHINE, "HKLM"),
                             (winreg.HKEY_CURRENT_USER, "HKCU")):
+        try:
+            with winreg.OpenKey(root, REG_APP, 0, KEY_READ64) as k:
+                loc = str(winreg.QueryValueEx(k, "InstallPath")[0] or "")
+        except OSError:
+            loc = ""
+        if loc and os.path.normcase(os.path.abspath(loc)) != want:
+            log(f"跳过 {root_name}：它的 InstallPath 指向另一份安装 {loc!r}")
+            continue
         for key in (REG_UNINST, REG_APP):
             try:
                 winreg.DeleteKeyEx(root, key, winreg.KEY_WOW64_64KEY, 0)
@@ -101,7 +154,11 @@ def delete_registry() -> None:
             except FileNotFoundError:
                 pass
             except OSError as exc:
-                log(f"删除注册表失败 {root_name}\\{key}: {exc}")
+                # 多半是残留子键（QSettings 的 Software\NetDiag\NetDiag）→ 递归清理
+                if _delete_key_tree(root, key):
+                    log(f"已递归删除注册表 {root_name}\\{key}")
+                else:
+                    log(f"删除注册表失败 {root_name}\\{key}: {exc}")
 
 
 def _install_path_from(root: int) -> str:
@@ -158,14 +215,27 @@ def parse_args(argv: list[str]) -> dict:
             opts["confirmed"] = True
         elif low.startswith("/t=") or low.startswith("--target="):
             # /T= 只作为交接副本的“提示”，不能仅凭它夺取删除目标：
-            # 必须是绝对路径、位于已定位的安装目录内，否则当作没传。
+            # 必须是绝对路径、位于已定位的安装目录内，或本身就是一个真实安装目录
+            # （含 NetDiag.exe + uninstall.exe）——后者用于机器上装有多份 NetDiag、
+            # 注册表记录指向另一份时，交接副本仍能删掉本次要卸载的那一份。
             opts["target"] = None           # 后一个 /T= 若非法，不能沿用前一个
             candidate = _normalize_target(a.split("=", 1)[1])
             installed = locate_install_dir()
             base = os.path.abspath(installed) if installed else None
             if candidate and base and inside(candidate, base):
                 opts["target"] = candidate
+            elif candidate and _looks_like_install_dir(candidate):
+                opts["target"] = candidate
     return opts
+
+
+def _looks_like_install_dir(path: str) -> bool:
+    """目录特征确认：含主程序与卸载器，才认作真实安装目录（防 /T 乱指）。"""
+    try:
+        return (os.path.isfile(os.path.join(path, EXE_NAME))
+                and os.path.isfile(os.path.join(path, "uninstall.exe")))
+    except OSError:
+        return False
 
 
 def inside(path: str, parent: str) -> bool:
@@ -242,6 +312,9 @@ def purge_tree(path: str) -> int:
     """
     if not os.path.isdir(path):
         return 0
+    if _too_broad(path):
+        log(f"拒绝删除过宽的目录 {path}")
+        return 1
     # 快速路径：多数情况下第一次就干净（用户正常卸载时文件早已不在扫描中）
     for delay in (0.0, 0.4, 1.0, 2.0, 3.0):
         if delay:
@@ -331,6 +404,57 @@ def drop_self() -> None:
     schedule_delete_on_reboot(me)
 
 
+def _under(path: str, parent: str) -> bool:
+    """path 是否等于 parent 或位于其下（跨盘符返回 False）。"""
+    try:
+        return os.path.commonpath([os.path.abspath(path), os.path.abspath(parent)]) == \
+            os.path.abspath(parent)
+    except (ValueError, OSError):
+        return False
+
+
+def _safe_shortcut(path: str, parent: str, suffix: str = "") -> str:
+    """只接受 parent 目录内、带指定后缀的快捷方式路径。
+
+    ``HKCU\\Software\\NetDiag`` 普通用户就能写：把这个值改成 ``D:\\数据`` 或
+    ``C:\\Users\\x\\Documents``，卸载器原来会照着它递归删目录 —— 等于任何本机
+    程序都能借「卸载」删掉用户的任意文件。这里做白名单校验，不合规直接丢弃，
+    回落到按 CSIDL 计算的默认位置。
+    """
+    if not path:
+        return ""
+    if suffix and not str(path).lower().endswith(suffix.lower()):
+        log(f"忽略可疑的快捷方式路径（后缀不是 {suffix}）: {path!r}")
+        return ""
+    if not _under(path, parent):
+        log(f"忽略越界的快捷方式路径（不在 {parent!r} 内）: {path!r}")
+        return ""
+    # 等于父目录本身同样危险：值填成开始菜单根目录，就会删掉整个开始菜单
+    if os.path.abspath(path).rstrip("\\/").lower() == \
+            os.path.abspath(parent).rstrip("\\/").lower():
+        log(f"忽略指向目录本身的快捷方式路径: {path!r}")
+        return ""
+    return path
+
+
+def _too_broad(path: str) -> bool:
+    """拒绝盘符根与系统目录本身：宁可卸载不干净，也不能一次 rmtree 毁掉系统。"""
+    p = os.path.abspath(path).rstrip("\\/")
+    if len(p) <= 3:                        # C:\ / D:\
+        return True
+    low = p.lower()
+    env = os.environ
+    drive = env.get("SystemDrive", "C:")
+    candidates = [env.get(k, "") for k in
+                  ("SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData",
+                   "USERPROFILE", "LOCALAPPDATA", "APPDATA")]
+    candidates += [os.path.join(drive, "\\"), os.path.join(drive, "\\Users")]
+    for c in candidates:
+        if c and low == os.path.abspath(c).rstrip("\\/").lower():
+            return True
+    return False
+
+
 def recorded_shortcuts() -> tuple[str, str]:
     """安装时记下的桌面 .lnk 与开始菜单程序组路径。
 
@@ -362,23 +486,22 @@ def main() -> int:
     target = opts["target"] or locate_install_dir()
     if not target:                        # 连安装目录都定位不到，绝不猜着删
         log("无法确定安装目录，拒绝删除")
-        ui.message_box("无法确定 NetDiag 的安装目录，已取消卸载。",
-                       "卸载 NetDiag", ui.MB_OK | ui.MB_ICONERROR)
+        ui.message_box(L("no_target"), L("uninst_title"),
+                       ui.MB_OK | ui.MB_ICONERROR)
         return 1
     cleanup_stale_copies()                # 顺手回收上次遗留的临时副本
     log(f"install_dir={target!r} 存在={os.path.isdir(target)} "
         f"主程序={os.path.isfile(os.path.join(target, EXE_NAME))}")
 
     if not os.path.isfile(os.path.join(target, EXE_NAME)):
-        ui.message_box(f"在以下目录没有找到 {EXE_NAME}：\n{target}\n\n可能已经卸载过了。",
-                       "卸载 NetDiag", ui.MB_OK | ui.MB_ICONERROR)
+        ui.message_box(L("exe_missing", exe=EXE_NAME, path=target),
+                       L("uninst_title"), ui.MB_OK | ui.MB_ICONERROR)
         return 1
 
     # 交接副本、提权重启的实例都不再问一遍——用户前面已经确认过
     if not handoff and not confirmed:
-        if ui.message_box(f"确定要卸载 {APP_NAME} 吗？\n\n安装目录：{target}\n"
-                          "桌面与开始菜单的快捷方式会一并删除。",
-                          "卸载 NetDiag",
+        if ui.message_box(L("confirm_uninst", app=APP_NAME, path=target),
+                          L("uninst_title"),
                           ui.MB_YESNO | ui.MB_ICONQUESTION) != ui.IDYES:
             return 2
 
@@ -389,17 +512,15 @@ def main() -> int:
         # 交接副本不再二次提权，避免「提权→复制→再提权」打转
         if handoff:
             log("副本没有管理员权限，放弃")
-            ui.message_box("没有获得管理员权限，无法删除安装目录里的文件。\n\n"
-                           f"{target}\n\n可以右键以管理员身份运行卸载程序重试。",
-                           "卸载 NetDiag", ui.MB_OK | ui.MB_ICONERROR)
+            ui.message_box(L("no_admin", path=target),
+                           L("uninst_title"), ui.MB_OK | ui.MB_ICONERROR)
             return 4
         if ui.relaunch_elevated("/ELEVATED /CONFIRMED"):
             log("已请求管理员权限，交接给提权实例")
             return 0
         log("提权被拒绝")
-        ui.message_box("没有获得管理员权限，无法删除安装目录里的文件。\n\n"
-                       f"{target}\n\n可以右键以管理员身份运行卸载程序重试。",
-                       "卸载 NetDiag", ui.MB_OK | ui.MB_ICONERROR)
+        ui.message_box(L("no_admin", path=target),
+                           L("uninst_title"), ui.MB_OK | ui.MB_ICONERROR)
         return 4
 
     # 关键一步：卸载器自己就在安装目录里时，先把自身搬到 %TEMP% 再动手。
@@ -409,18 +530,34 @@ def main() -> int:
             return 0
         log("交接失败，退化为原地删除（可能残留卸载器自身）")
 
+    if _too_broad(target):
+        log(f"目标目录过宽，拒绝继续 {target}")
+        ui.message_box(L("refuse_broad", path=target), L("uninst_title"),
+                       ui.MB_OK | ui.MB_ICONERROR)
+        return 5
+
     log("开始删除快捷方式与注册表")
     rec_desk, rec_start = recorded_shortcuts()
     log(f"记录的快捷方式 desk={rec_desk!r} start={rec_start!r}")
-    desk_lnks = {os.path.abspath(p) for p in
-                 (rec_desk, os.path.join(folder_path(CSIDL_DESKTOPDIRECTORY), LNK_NAME)) if p}
-    groups = {os.path.abspath(p) for p in
-              (rec_start, os.path.join(folder_path(CSIDL_PROGRAMS), "NetDiag")) if p}
+    # 注册表里的路径只当「线索」：必须落在系统认定的桌面 / 开始菜单目录内才采信
+    desk_dir = folder_path(CSIDL_DESKTOPDIRECTORY)
+    start_dir = folder_path(CSIDL_PROGRAMS)
+    if not desk_dir or not start_dir:      # SHGetFolderPath 失败时别拼出相对路径
+        log(f"桌面/开始菜单目录解析失败 desk={desk_dir!r} start={start_dir!r}，跳过快捷方式清理")
+    desk_lnks, groups = set(), set()
+    if desk_dir:
+        desk_lnks = {os.path.abspath(p) for p in
+                     (_safe_shortcut(rec_desk, desk_dir, ".lnk"),
+                      os.path.join(desk_dir, LNK_NAME)) if p}
+    if start_dir:
+        groups = {os.path.abspath(p) for p in
+                  (_safe_shortcut(rec_start, start_dir),
+                   os.path.join(start_dir, "NetDiag")) if p}
     for p in desk_lnks:
         remove_file(p)
     for p in groups:
         remove_tree(p)
-    delete_registry()
+    delete_registry(target)
 
     left = purge_tree(target)
     scheduled_ok, scheduled_fail = 0, 0
@@ -433,17 +570,15 @@ def main() -> int:
 
     if left:
         if scheduled_fail:
-            advice = ("重启后删除登记失败（通常需要管理员权限）。\n"
-                      "请以管理员身份重新运行本卸载程序，或手动删除残留目录。")
+            advice = L("advice_sched_fail")
         else:
-            advice = "剩下的文件已登记为重启后删除。"
-        ui.message_box(f"{APP_NAME} 已卸载，但有 {left} 个文件没删掉（可能被占用）。\n\n"
-                       f"目录：{target}\n日志：{LOG_PATH}\n\n"
-                       f"{advice}",
-                       "卸载 NetDiag", ui.MB_OK | ui.MB_ICONWARNING)
+            advice = L("advice_sched_ok")
+        ui.message_box(L("uninst_left", app=APP_NAME, n=left, path=target,
+                       log=LOG_PATH, advice=advice),
+                       L("uninst_title"), ui.MB_OK | ui.MB_ICONWARNING)
     else:
-        ui.message_box(f"{APP_NAME} 已卸载。\n\n安装目录及快捷方式已删除：\n{target}",
-                       "卸载完成", ui.MB_OK | ui.MB_ICONINFORMATION)
+        ui.message_box(L("uninst_done", app=APP_NAME, path=target),
+                       L("uninst_done_title"), ui.MB_OK | ui.MB_ICONINFORMATION)
     return 0 if left == 0 else 3
 
 
