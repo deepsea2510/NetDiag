@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 from app.utils import expand_targets, expand_ports, TargetParseError
 from app import (ping_engine, port_scanner, traceroute as trace_engine, dig_tool,
                  snmp_tool, oid_store, weakpass, fingerprint, report, protocol_detect,
-                 wmi_tool, syslog_engine, syslog_storage, theme)
+                 wmi_tool, syslog_engine, syslog_storage, theme, device_id)
 from app.netifaces import local_networks
 from app.paths import app_root
 from app import i18n  # v10.13：界面多语言（中文/英文，跟随系统 + 手动切换）
@@ -147,6 +147,74 @@ class PingWorker(QThread):
 
     def stop(self):
         self.cancel_event.set()
+
+
+class IdentifyWorker(QThread):
+    """Ping 结束后的终端识别：只读本机邻居表，同网段才补 SendARP。
+
+    独立于 PingWorker：识别是追加动作，塞进 ping 热路径会把并发吞吐拖回
+    进程级 ping 的水平。这里不占用 self.worker，避免挡住下一轮 Ping。
+    """
+
+    def __init__(self, items, nets, parent=None):
+        super().__init__(parent)
+        self.items = items
+        self.nets = nets
+        self.signals = WorkerSignals()
+
+    def run(self):
+        try:
+            # 识别阶段自己取一次本机网段：用户没点过「识别本机网卡」也要能判断
+            # 哪些目标同网段（只有同网段才值得发 SendARP）。
+            nets = self.nets
+            if nets is None:
+                try:
+                    nets = local_networks()
+                except Exception:                    # noqa: BLE001
+                    nets = []
+            stats = device_id.annotate(self.items, nets)
+        except Exception as exc:                     # noqa: BLE001
+            self.signals.error.emit(str(exc))
+            return
+        self.signals.finished.emit(stats, False)
+
+
+class _OuiCancelled(Exception):
+    """用户中止厂商库更新。"""
+
+
+class OuiUpdateWorker(QThread):
+    """从 IEEE 下载全量厂商库（5 个 CSV，约 6 MB）并写入本地缓存。
+
+    只在用户点「厂商库」时启动：诊断工具可能跑在受限网络里，后台静默联网
+    比慢一点更让人意外。失败不改变现有表，内置快照继续可用。
+    慢链路下单个文件可能要几十秒，所以按「第几张表」回报进度并可中止。
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.signals = WorkerSignals()
+        self._stop = False
+
+    def stop(self):
+        self._stop = True
+        device_id.cancel_downloads()      # 关闭在途响应，避免 read() 卡满超时
+
+    def _progress(self, index, total, registry):
+        if self._stop:
+            raise _OuiCancelled()
+        self.signals.progress.emit(index, total)
+
+    def run(self):
+        try:
+            status = device_id.update_oui(timeout=30, progress=self._progress)
+        except (_OuiCancelled, device_id.DownloadCancelled):
+            self.signals.finished.emit(None, True)
+            return
+        except Exception as exc:                     # noqa: BLE001
+            self.signals.error.emit(str(exc))
+            return
+        self.signals.finished.emit(status, False)
 
 
 class ScanWorker(QThread):
@@ -1927,12 +1995,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         i18n.ensure_init()              # v10.13：先解析语言，动态文案才能按当前语言生成
         ensure_titlebar_tint()
-        self.setWindowTitle("NetDiag v10.13.5 网络诊断工具")
+        self.setWindowTitle("NetDiag v10.14.0 网络诊断工具")
         self.setWindowIcon(_app_icon())
         self.setMinimumSize(980, 720)
         self.resize(1120, 820)
         self.ping_worker = None
         self.ping_results = []          # 已收到的 Ping 结果，供切换排序方式时重排
+        self.identify_worker = None     # v10.14：终端识别线程（独立于 ping worker）
         self.scan_worker = None
         # 弱口令字典分三层：编辑框里的内置字典 + 外挂字典文件 → 联合引用后的最终字典
         self.weak_base = list(weakpass.DEFAULT_CREDS)     # 编辑框内容（内置/手写）
@@ -2065,7 +2134,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         for name in ("worker", "trace_worker", "snmp_worker", "wmi_worker",
-                     "scan_worker"):
+                     "scan_worker", "identify_worker", "vendor_db_worker"):
             worker = getattr(self, name, None)
             if worker is None:
                 continue
@@ -2113,7 +2182,7 @@ class MainWindow(QMainWindow):
         self.tabs = tabs
         tabs.currentChanged.connect(self._on_tab_changed)
 
-        foot = QLabel("NetDiag v10.13.5 · 本地运行，诊断数据不上传 · 端口/弱口令/指纹 + WMI + Syslog 收集预警")
+        foot = QLabel("NetDiag v10.14.0 · 本地运行，诊断数据不上传 · 端口/弱口令/指纹 + WMI + Syslog 收集预警")
         foot.setAlignment(Qt.AlignCenter)
         style_widget(foot, "color:#9aa79e;font-size:11px;padding:6px;")
 
@@ -2285,24 +2354,57 @@ class MainWindow(QMainWindow):
         self.ping_stats = QLabel("尚未执行 Ping")
         self.ping_stats.setStyleSheet("padding:4px;")
         sl.addWidget(self.ping_stats)
-        self.ping_filter = QLineEdit(); self.ping_filter.setPlaceholderText("🔎 过滤主机...")
-        self.ping_filter.textChanged.connect(lambda: self._filter_table(self.ping_table, self.ping_filter.text(), {0, 2}))
+        # v10.14：终端识别开关。一期只读本机邻居表 + TTL，不发任何探测包，
+        # 因此默认开启也不会造成扫描行为。
+        row_id = QHBoxLayout()
+        self.ping_identify = QCheckBox("识别厂商 / 系统")
+        self.ping_identify.setChecked(True)
+        self.ping_identify.setToolTip(i18n.T(
+            "只读取本机 ARP / 邻居表并解析 ICMP 回包 TTL，不发送任何端口或协议探测包。\n"
+            "厂商来自网卡 MAC 前缀与 IEEE 全量注册表（最长前缀匹配），跨网段目标拿不到 MAC，该列会留空。\n"
+            "系统为 TTL 剩余值推测，只能区分大致家族，不代表确切版本。"))
+        row_id.addWidget(self.ping_identify)
+        self.ping_identify_hint = QLabel("本地 ARP 表 + TTL，不发包")
+        self.ping_identify_hint.setStyleSheet("color:#888;")
+        row_id.addWidget(self.ping_identify_hint)
+        row_id.addStretch(1)
+        # 厂商库状态：文本在首次显示后异步补（加载 6 万条约 200ms，别拖慢启动）
+        self.vendor_db_btn = QPushButton("厂商库")
+        self.vendor_db_btn.setObjectName("preset")
+        self.vendor_db_btn.setToolTip(i18n.T("厂商库：来自 IEEE 注册表。点击可联网更新到最新版本"))
+        self.vendor_db_btn.clicked.connect(self._update_vendor_db)
+        row_id.addWidget(self.vendor_db_btn)
+        QTimer.singleShot(300, self._refresh_vendor_db_label)
+        sl.addLayout(row_id)
+        self.ping_identify.toggled.connect(self._on_identify_toggled)
+        self.ping_filter = QLineEdit(); self.ping_filter.setPlaceholderText("🔎 过滤主机 / IP / 厂商...")
+        self.ping_filter.textChanged.connect(lambda: self._filter_table(self.ping_table, self.ping_filter.text(), {0, 2, 3}))
         sl.addWidget(self.ping_filter)
         self.ping_table = self._make_table(
-            ["主机", "状态", "IP", "丢包率", "最小(ms)", "平均(ms)", "最大(ms)"],
-            [190, 90, 130, 90, 90, 90, 90],
+            ["主机", "状态", "IP", "厂商", "系统", "丢包率", "最小(ms)", "平均(ms)", "最大(ms)"],
+            self.PING_COL_W,
             stretch_col=0,
             sortable=False,      # 行序由「排序」下拉框统一控制，避免表头点击打乱
         )
+        # 行高固定，长 MAC / 厂商名换行只会被裁掉半行，这里改为单行省略
+        self.ping_table.setWordWrap(False)
         self.ping_table.doubleClicked.connect(self._ping_cell_double)
+        # 厂商列：默认宽度放不下 IEEE 的长名字，双击表头按内容自适应
+        hdr = self.ping_table.horizontalHeader()
+        hdr.setToolTip(i18n.T("双击「厂商」表头可按内容自适应列宽；悬停单元格看完整厂商名与 MAC"))
+        hdr.sectionDoubleClicked.connect(self._ping_header_double)
         # v10.9：右键把 ping 结果里的在线 IP 直接填入扫描 / SNMP / WMI 目标
         self.ping_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ping_table.customContextMenuRequested.connect(self._ping_context_menu)
         sl.addWidget(self.ping_table)
+        # 布局阶段 Qt 会把窄列抬到表头所需宽度（延迟三列 76 → 112），这里按设计值压实。
+        # 首次 show 之后 Qt 还会再抬一次，所以顺延到事件循环里补一遍。
+        self._pin_ping_widths()
+        QTimer.singleShot(0, self._pin_ping_widths)
         lay.addWidget(stat)
         self.ping_feed = OrderedTableFeed(self.ping_table, self._apply_ping_row, self._ping_sort_key, self,
                                           after_flush=lambda: self._replay_filter(
-                                              self.ping_table, self.ping_filter, {0, 2}))
+                                              self.ping_table, self.ping_filter, {0, 2, 3}))
         # 排序方式切换后立刻按新规则重排已有结果
         self.ping_sort.currentIndexChanged.connect(lambda _=0: self._resort_ping())
         return w
@@ -3047,6 +3149,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "输入错误", str(exc)); return
         if not hosts:
             QMessageBox.warning(self, "输入错误", "未解析到任何目标"); return
+        # 上一轮的识别线程若还在跑，先等它收尾，否则它会把旧结果回填进新表格
+        prev = getattr(self, "identify_worker", None)
+        if prev is not None and prev.isRunning():
+            prev.wait(2000)
         self.ping_feed.reset()
         self.ping_results.clear()
         self.ping_table.setRowCount(0)
@@ -3118,7 +3224,11 @@ class MainWindow(QMainWindow):
         txt, kind = STATUS_TEXT[st]
         txt = i18n.T(txt)
         t.setItem(row, 1, status_item(txt, kind))
-        for col, key in [(2, "resolved_ip"), (3, "loss"), (4, "min_ms"), (5, "avg_ms"), (6, "max_ms")]:
+        ip_item = QTableWidgetItem(ip)
+        ip_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        t.setItem(row, 2, ip_item)
+        self._apply_ping_identify_cells(r, row, t)
+        for col, key in [(5, "loss"), (6, "min_ms"), (7, "avg_ms"), (8, "max_ms")]:
             v = r.get(key)
             text = "-" if v is None else (f"{v}%" if key == "loss" else str(v))
             item = QTableWidgetItem(text)
@@ -3126,6 +3236,103 @@ class MainWindow(QMainWindow):
             if key == "loss" and isinstance(v, (int, float)):
                 paint_item(item, "fg:ok" if alive else "fg:bad")
             t.setItem(row, col, item)
+
+    # 系统家族 → 展示文案（key 由 device_id.os_of 给出）
+    OS_LABEL = {
+        "windows": "Windows", "unix": "Linux/Unix", "network": "网络设备",
+        "embedded": "嵌入式", "local": "本机",
+    }
+
+    # Ping 表格设计列宽。厂商列基线 200 px（原来 132 会把「Qingdao Haier」压成
+    # 「Qingdao Ha…」），识别完成后还会按实际内容再放宽；更长的不硬截，
+    # 越界交给控件按真实像素省略，拉宽列就能看到更多
+    PING_COL_W = [170, 72, 104, 200, 92, 72, 100, 100, 100]
+
+    def _pin_ping_widths(self):
+        """把列宽压回设计值。
+
+        Qt 在布局阶段会把窄列抬到表头文字所需宽度（延迟三列 76 → 112），
+        白占一百多像素。这里在控件入布局后再设一次；之后用户仍可自由拖动。
+        """
+        for c, w in enumerate(self.PING_COL_W):
+            self.ping_table.setColumnWidth(c, w)
+
+    def _vendor_need_width(self) -> int:
+        """当前结果里最长厂商名需要的像素宽（只看前 500 行，够用且不卡）。"""
+        t = self.ping_table
+        fm = t.fontMetrics()
+        need = 0
+        for r in range(min(t.rowCount(), 500)):
+            item = t.item(r, 3)
+            text = item.text() if item else ""
+            if text and text != "-":
+                need = max(need, fm.horizontalAdvance(text) + 20)
+        return need
+
+    def _fit_vendor_column(self):
+        """识别完成后按内容放大厂商列，同时保证主机列不被挤空。
+
+        窗口越宽给得越多（上限 340）；再长的名字靠 tooltip 与双击表头，列宽不无限膨胀。
+        """
+        t = self.ping_table
+        if t.rowCount() == 0:
+            return
+        need = self._vendor_need_width() or 150
+        others = sum(t.columnWidth(c) for c in range(1, 9) if c != 3)
+        room = t.viewport().width() - others - 150      # 主机列至少留 150
+        t.setColumnWidth(3, max(150, min(need, 340, max(150, room))))
+
+    @Slot(int)
+    def _ping_header_double(self, section):
+        """双击「厂商」表头 → 按内容铺满，但仍给主机列留 110px 以免被挤没。"""
+        if section != 3:
+            return
+        t = self.ping_table
+        need = self._vendor_need_width() or 150
+        others = sum(t.columnWidth(c) for c in range(1, 9) if c != 3)
+        room = t.viewport().width() - others - 110
+        t.setColumnWidth(3, max(150, min(need, 460, max(150, room))))
+
+    def _apply_ping_identify_cells(self, r, row, t):
+        """厂商 / 系统两列：识别前后都走这里，保证首次填行与后续回填一致。"""
+        alive = bool(r.get("alive"))
+        identify_on = getattr(self, "ping_identify", None) is not None and \
+            self.ping_identify.isChecked()
+        mac = r.get("mac") or ""
+        vendor = r.get("vendor") or ""
+        if not alive:
+            v_text, v_tip = "-", ""
+        elif vendor:
+            name = i18n.T(vendor)
+            v_text = device_id.short_vendor(name)
+            v_tip = i18n.F("{}\nMAC {}", vendor, mac) if mac else vendor
+        elif mac:
+            v_text, v_tip = mac, i18n.T("未在厂商库中，可外挂 oui.json 补全")
+        elif identify_on:
+            v_text, v_tip = "-", i18n.T("跨网段或尚未与本机通信，取不到 MAC")
+        else:
+            v_text, v_tip = "-", ""
+        v_item = QTableWidgetItem(v_text)
+        v_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        v_item.setToolTip(v_tip)
+        t.setItem(row, 3, v_item)
+
+        key = r.get("os_hint") or ""
+        os_text = i18n.T(self.OS_LABEL.get(key, "")) if key else "-"
+        hops = r.get("os_hops") or 0
+        ttl = r.get("ttl")
+        if not identify_on and not key:
+            os_tip = ""
+        elif key == "local":
+            os_tip = i18n.T("本机回环地址，不做系统推断")
+        elif key:
+            os_tip = i18n.F("依据 ICMP 剩余 TTL={}，推断经过约 {} 跳；仅供参考", ttl, hops)
+        else:
+            os_tip = i18n.T("未收到带 TTL 的回包")
+        o_item = QTableWidgetItem(os_text)
+        o_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        o_item.setToolTip(os_tip)
+        t.setItem(row, 4, o_item)
 
     @Slot(object, bool)
     def _on_ping_done(self, payload, cancelled):
@@ -3152,6 +3359,141 @@ class MainWindow(QMainWindow):
             ])
         self._set_running("ping", False)
         self.worker = None
+        self._maybe_identify()
+
+    def _maybe_identify(self):
+        """Ping 结束后对存活主机补厂商 / 系统。后台线程，失败不影响 ping 结论。"""
+        if not getattr(self, "ping_identify", None) or not self.ping_identify.isChecked():
+            return
+        alive = [r for r in self.ping_results if r.get("alive")]
+        if not alive:
+            return
+        prev = getattr(self, "identify_worker", None)
+        if prev is not None and prev.isRunning():
+            prev.wait(2000)
+        w = IdentifyWorker(alive, None)
+        w.signals.finished.connect(self._on_identify_done)
+        w.signals.error.connect(lambda _msg: None)   # 识别是增强项，静默失败
+        self.identify_worker = w
+        w.start()
+
+    @Slot(bool)
+    def _on_identify_toggled(self, checked):
+        """切换识别开关：开启时对已有结果补一次，关闭时清掉两列显示。"""
+        if checked:
+            self._maybe_identify()
+            return
+        prev = getattr(self, "identify_worker", None)
+        if prev is not None and prev.isRunning():
+            prev.wait(2000)
+        for r in self.ping_results:
+            r["mac"] = ""
+            r["vendor"] = ""
+            r["os_hint"] = ""
+            r["os_hops"] = 0
+        if self.ping_results:
+            self._resort_ping()
+
+    @Slot(object, bool)
+    def _on_identify_done(self, stats, _cancelled=False):
+        """识别完成：只回填两列单元格，不重建表格（避免滚动位置跳动）。"""
+        idx = {}
+        for r in self.ping_results:
+            key = (r.get("host", ""), r.get("resolved_ip") or r.get("host", ""))
+            idx[key] = r
+        t = self.ping_table
+        for row in range(t.rowCount()):
+            h_item, ip_item = t.item(row, 0), t.item(row, 2)
+            if not h_item or not ip_item:
+                continue
+            r = idx.get((h_item.text(), ip_item.text()))
+            if r is not None:
+                self._apply_ping_identify_cells(r, row, t)
+        self._fit_vendor_column()
+
+    # ---------- 厂商库（IEEE 全量） ----------
+    def _refresh_vendor_db_label(self):
+        """把当前库来源与条数写到按钮上；加载失败也不影响识别功能。"""
+        btn = getattr(self, "vendor_db_btn", None)
+        if btn is None:
+            return
+        try:
+            st = device_id.oui_status()
+        except Exception:                            # noqa: BLE001
+            btn.setText(i18n.T("厂商库"))
+            return
+        source = {"cache": "已更新", "bundled": "随包快照", "curated": "精选"}.get(
+            st.get("source", ""), "")
+        btn.setText(i18n.F("厂商库 {}{}", f"{st.get('entries', 0):,}",
+                           f" · {i18n.T(source)}" if source else ""))
+        tip = [i18n.F("厂商库：{} 条前缀（IEEE MA-L / MA-M / MA-S / IAB / CID）",
+                      f"{st.get('entries', 0):,}"),
+               i18n.T("按 9 → 7 → 6 位十六进制做最长前缀匹配"),
+               i18n.T("点击可联网更新到最新版本")]
+        if st.get("updated"):
+            tip.append(i18n.F("上次更新：{}", st["updated"].replace("T", " ")))
+            if st.get("stale"):
+                tip.append(i18n.F("已超过 {} 天，建议更新", device_id.OUI_CACHE_TTL_DAYS))
+        elif st.get("has_snapshot"):
+            tip.append(i18n.T("当前为随包快照，可联网更新到最新"))
+        btn.setToolTip("\n".join(tip))
+
+    def _update_vendor_db(self):
+        """联网更新厂商库：确认 → 后台下载 → 生效后重跑一次识别。"""
+        running = getattr(self, "vendor_db_worker", None)
+        if running is not None and running.isRunning():
+            self._abort_vendor_db()                  # 二次点击 = 中止
+            return
+        answer = QMessageBox.question(
+            self, i18n.T("更新厂商库"),
+            i18n.T("从 IEEE 官方注册表下载全量厂商库（5 个 CSV，约 6 MB），"
+                   "写入本地缓存后立即生效。\n\n"
+                   "需要联网，慢速网络可能要几分钟；下载期间可再次点击按钮中止。"
+                   "是否继续？"),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer != QMessageBox.Yes:
+            return
+        self.vendor_db_btn.setEnabled(True)          # 保持可点，用于中止
+        self.vendor_db_btn.setText(i18n.T("更新中…"))
+        w = OuiUpdateWorker()
+        w.signals.progress.connect(self._on_vendor_db_progress)
+        w.signals.finished.connect(self._on_vendor_db_done)
+        w.signals.error.connect(self._on_vendor_db_error)
+        self.vendor_db_worker = w
+        w.start()
+
+    @Slot(int, int)
+    def _on_vendor_db_progress(self, done, total):
+        btn = getattr(self, "vendor_db_btn", None)
+        if btn is not None:
+            btn.setText(i18n.F("更新中… {}/{}", done, total))
+
+    def _abort_vendor_db(self):
+        worker = getattr(self, "vendor_db_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.stop()
+            worker.wait(3000)
+
+    @Slot(object, bool)
+    def _on_vendor_db_done(self, status, cancelled=False):
+        self.vendor_db_btn.setEnabled(True)
+        self._refresh_vendor_db_label()
+        if cancelled or not status:
+            return
+        # 库里前缀变多了，已有行的厂商要按新表重算一遍
+        self._maybe_identify()
+        QMessageBox.information(
+            self, i18n.T("更新完成"),
+            i18n.F("厂商库已更新：{} 条前缀。", f"{status.get('entries', 0):,}"))
+
+    @Slot(str)
+    def _on_vendor_db_error(self, message):
+        self.vendor_db_btn.setEnabled(True)
+        self._refresh_vendor_db_label()
+        QMessageBox.warning(
+            self, i18n.T("更新失败"),
+            i18n.F("无法更新厂商库：{}", message) + "\n\n" +
+            i18n.T("现有库继续可用，识别功能不受影响。"))
 
     def _start_scan(self):
         if self.worker and self.worker.isRunning():
@@ -4413,6 +4755,9 @@ class MainWindow(QMainWindow):
             self.trace_worker.stop()
 
     def _clear_ping(self):
+        prev = getattr(self, "identify_worker", None)
+        if prev is not None and prev.isRunning():
+            prev.wait(2000)             # 否则清空后仍会被回填
         self.ping_feed.reset()
         self.ping_results.clear()
         self.ping_table.setRowCount(0)

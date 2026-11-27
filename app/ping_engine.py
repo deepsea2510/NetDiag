@@ -48,6 +48,8 @@ _RECV_LINUX_RE = re.compile(r"(\d+)\s+received", re.I)
 _SENT_CN_RE = re.compile(r"已发送\s*=\s*(\d+)")
 _SENT_EN_RE = re.compile(r"Sent\s*=\s*(\d+)", re.I)
 _SENT_LINUX_RE = re.compile(r"(\d+)\s+packets?\s+transmitted", re.I)
+# 系统 ping 的 TTL 字段：TTL=64 / ttl=64（Windows 中文输出为 TTL=64）
+_TTL_RE = re.compile(r"\bttl\s*=\s*(\d+)", re.I)
 
 
 @dataclass
@@ -64,6 +66,12 @@ class PingResult:
     resolved_ip: Optional[str] = None
     error: Optional[str] = None
     engine: str = ""              # native / system，便于界面显示与排查
+    # —— 终端识别用（v10.14）：ping 阶段只填 ttl，其余由 device_id 回填 ——
+    ttl: Optional[int] = None     # 回包剩余 TTL
+    os_hint: str = ""             # windows / unix / network / embedded / local
+    os_hops: int = 0              # TTL 推出来的跳数，越多越不可靠
+    mac: str = ""
+    vendor: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -160,6 +168,14 @@ def _parse_output(host: str, text: str, returncode: int, count: int) -> PingResu
     # 必须真实收到带 time 的 echo reply 才算在线
     alive = received > 0 and loss < 100
 
+    ttl = None
+    ttls = _TTL_RE.findall(text)
+    if ttls:
+        try:
+            ttl = int(ttls[-1])
+        except ValueError:
+            ttl = None
+
     return PingResult(
         host=host,
         ok=True,
@@ -171,6 +187,7 @@ def _parse_output(host: str, text: str, returncode: int, count: int) -> PingResu
         avg_ms=round(avg, 2) if avg is not None else None,
         max_ms=round(hi, 2) if hi is not None else None,
         resolved_ip=resolved,
+        ttl=ttl if alive else None,
     )
 
 
@@ -197,6 +214,7 @@ def ping_once_native(host: str, count: int = 4, timeout_ms: int = 1000,
     times: list[float] = []
     failed: list[int] = []
     sent = 0
+    ttl: Optional[int] = None
     for i in range(count):
         if cancel and cancel():
             break
@@ -204,6 +222,8 @@ def ping_once_native(host: str, count: int = 4, timeout_ms: int = 1000,
         sent += 1
         if reply.ok:
             times.append(reply.rtt_ms or 0.0)
+            if reply.ttl:
+                ttl = reply.ttl
         else:
             failed.append(reply.status)
         if i < count - 1 and not _wait(ECHO_INTERVAL_S, cancel):
@@ -232,6 +252,7 @@ def ping_once_native(host: str, count: int = 4, timeout_ms: int = 1000,
         resolved_ip=ip,
         error=err,
         engine="native",
+        ttl=ttl,
     )
 
 

@@ -255,7 +255,11 @@ function onDone(m){
     if (m.task === 'ping'){ toast(`Ping 完成：${m.summary.alive} 台在线 / ${m.summary.total} 台`); }
     else { toast(`扫描完成：发现 ${m.open_count} 个开放端口`); }
   }
-  if (m.task === 'ping'){ renderPing(); if (m.summary) renderPingStats(m.summary); }
+  if (m.task === 'ping'){
+    // 服务端在收尾前补了厂商/系统识别，替换成带识别结果的完整集合
+    if (Array.isArray(m.results)) pingData = m.results;
+    renderPing(); if (m.summary) renderPingStats(m.summary);
+  }
   else { renderScan(); renderScanStats(); }
   if (!m.cancelled) updateProgress(m.task, 1, 1);
 }
@@ -392,6 +396,8 @@ $('pingTableWrap').addEventListener('click', e => {
   toast(`已填入 ${ip}，设置端口后开始扫描`);
   $('scanPorts').focus();
 });
+const OS_LABEL = {windows:'Windows', unix:'Linux/Unix', network:'网络设备',
+                  embedded:'嵌入式', local:'本机'};
 function renderPing(){
   const q = $('pingFilter').value.toLowerCase();
   let rows = pingData.filter(r => !q || r.host.toLowerCase().includes(q));
@@ -400,16 +406,20 @@ function renderPing(){
   const st = sortState.ping;
   let h = '<table><thead><tr>';
   h += th('主机','host',st,'ping')+th('状态','alive',st,'ping')+th('IP','resolved_ip',st,'ping')
+     + th('厂商','vendor',st,'ping')+th('系统','os_hint',st,'ping')
      + th('丢包率','loss',st,'ping')+th('最小(ms)','min_ms',st,'ping')
      + th('平均(ms)','avg_ms',st,'ping')+th('最大(ms)','max_ms',st,'ping');
   h += '</tr></thead><tbody>';
-  if (!rows.length) h += '<tr><td colspan="7"><div class="empty"><div class="big">📡</div>暂无 Ping 结果</div></td></tr>';
+  if (!rows.length) h += '<tr><td colspan="9"><div class="empty"><div class="big">📡</div>暂无 Ping 结果</div></td></tr>';
   rows.forEach(r=>{
     const ip = r.resolved_ip || r.host;
     const clickable = r.alive ? `<span class="ip-link" data-ip="${esc(ip)}" title="点击扫描此 IP 的端口">${esc(r.host)}</span>` : esc(r.host);
+    const vendor = r.vendor || (r.mac || '');
     h += `<tr><td>${clickable}</td>`
       + `<td><span class="pill ${r.alive?'alive':'dead'}">${r.alive?'在线':'离线'}</span></td>`
       + `<td>${esc(r.resolved_ip||'-')}</td>`
+      + `<td title="${esc(r.mac||'')}">${esc(vendor||'-')}</td>`
+      + `<td title="${esc(r.ttl?('TTL='+r.ttl):'')}">${esc(OS_LABEL[r.os_hint]||'-')}</td>`
       + `<td>${r.loss??'-'}%</td><td>${r.min_ms??'-'}</td><td>${r.avg_ms??'-'}</td><td>${r.max_ms??'-'}</td></tr>`;
   });
   h += '</tbody></table>';

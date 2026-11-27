@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from .utils import expand_targets, expand_ports, TargetParseError
 from .paths import static_dir
-from . import ping_engine, port_scanner, netifaces
+from . import ping_engine, port_scanner, netifaces, device_id
 
 app = FastAPI(title="NetDiag 网络诊断工具", version="1.0")
 STATIC_DIR = static_dir()
@@ -157,11 +157,20 @@ async def handle_ping_ws(ws: WebSocket, data: dict, state: _TaskState) -> None:
             continue
     results = await future
     summary = ping_engine.summarize(results)
+    # v10.14：终端识别。只读本机邻居表 + ICMP 回包 TTL，不发任何探测包；
+    # 放到线程里跑，避免 SendARP 把事件循环卡住。
+    if data.get("identify", True):
+        try:
+            nets = netifaces.local_networks()
+            await asyncio.to_thread(device_id.annotate, results, nets)
+        except Exception:                            # noqa: BLE001
+            pass
     # 若已被新任务取代，不再推送旧任务的收尾消息，避免干扰前端
     if _active_tasks.get(ws) is state:
         await _ws_send(ws, {
             "type": "done", "task": "ping", "task_id": state.id,
             "summary": summary, "cancelled": state.cancelled,
+            "results": [r.to_dict() for r in results],   # 含识别结果，供前端重渲染
             "message": (f"已停止，完成 {len(results)}/{total} 个目标" if state.cancelled else None),
         })
 

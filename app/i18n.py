@@ -39,9 +39,9 @@ LANG_NAMES = {
 # 键 = 界面中文原文（与源码字面量一致），值 = English。
 _EN: dict[str, str] = {
     # 主窗口
-    "NetDiag v10.13.5 网络诊断工具": "NetDiag v10.13.5 Network Diagnostics",
-    "NetDiag v10.13.5 · 本地运行，诊断数据不上传 · 端口/弱口令/指纹 + WMI + Syslog 收集预警":
-        "NetDiag v10.13.5 · Runs locally, diagnostics never leave this machine · "
+    "NetDiag v10.14.0 网络诊断工具": "NetDiag v10.14.0 Network Diagnostics",
+    "NetDiag v10.14.0 · 本地运行，诊断数据不上传 · 端口/弱口令/指纹 + WMI + Syslog 收集预警":
+        "NetDiag v10.14.0 · Runs locally, diagnostics never leave this machine · "
         "Port/weak-cred/fingerprint + WMI + Syslog collection & alerting",
     # 标签页
     "📡  Ping 诊断": "📡  Ping",
@@ -192,6 +192,63 @@ _EN: dict[str, str] = {
     "🔎 过滤 IP / 主机...": "🔎 Filter IP / host (spaced)...",
     # 表头（与代码内列名一致）
     "丢包率": "Loss", "TTL": "TTL",
+    # v10.14 终端识别
+    "厂商": "Vendor", "系统": "System",
+    "识别厂商 / 系统": "Identify vendor / OS",
+    "本地 ARP 表 + TTL，不发包": "Local ARP table + TTL, no packets sent",
+    "双击「厂商」表头可按内容自适应列宽；悬停单元格看完整厂商名与 MAC":
+        "Double-click the Vendor header to fit the column to its content; "
+        "hover a cell for the full vendor name and MAC",
+    "🔎 过滤主机 / IP / 厂商...": "🔎 Filter host / IP / vendor...",
+    "网络设备": "Network device", "嵌入式": "Embedded", "本机": "Local host",
+    "未在厂商库中，可外挂 oui.json 补全":
+        "Not in the vendor database; add oui.json to extend",
+    "跨网段或尚未与本机通信，取不到 MAC":
+        "No MAC: cross-subnet, or never talked to this host",
+    "本地管理地址": "Locally administered",
+    "本机回环地址，不做系统推断": "Loopback address, no OS inference",
+    "未收到带 TTL 的回包": "No reply with TTL",
+    "依据 ICMP 剩余 TTL={}，推断经过约 {} 跳；仅供参考":
+        "From remaining TTL={} (~{} hops away); rough estimate only",
+    # v10.14 厂商库（IEEE 全量 + 在线更新）
+    "厂商库": "Vendor DB", "更新厂商库": "Update vendor database",
+    "厂商库：来自 IEEE 注册表。点击可联网更新到最新版本":
+        "Vendor DB from the IEEE registry. Click to update online",
+    "厂商库 {}{}": "Vendor DB {}{}",
+    "已更新": "updated", "随包快照": "Bundled snapshot", "精选": "curated",
+    "厂商库：{} 条前缀（IEEE MA-L / MA-M / MA-S / IAB / CID）":
+        "Vendor DB: {} prefixes (IEEE MA-L / MA-M / MA-S / IAB / CID)",
+    "按 9 → 7 → 6 位十六进制做最长前缀匹配":
+        "Longest-prefix match over 9 → 7 → 6 hex digits",
+    "点击可联网更新到最新版本": "Click to update online",
+    "上次更新：{}": "Last update: {}",
+    "已超过 {} 天，建议更新": "Older than {} days, update recommended",
+    "当前为随包快照，可联网更新到最新":
+        "Bundled snapshot in use; update online for the latest",
+    "从 IEEE 官方注册表下载全量厂商库（5 个 CSV，约 6 MB），"
+    "写入本地缓存后立即生效。\n\n"
+    "需要联网，慢速网络可能要几分钟；下载期间可再次点击按钮中止。"
+    "是否继续？":
+        "Download the full vendor database from the official IEEE registry "
+        "(5 CSV files, about 6 MB) and cache it locally — effective immediately."
+        "\n\nInternet access is required; a slow link may take minutes. "
+        "Click the button again to abort. Continue?",
+    "更新中… {}/{}": "Updating… {}/{}",
+    "更新中…": "Updating…", "更新完成": "Update complete",
+    "更新失败": "Update failed",
+    "厂商库已更新：{} 条前缀。": "Vendor DB updated: {} prefixes.",
+    "无法更新厂商库：{}": "Could not update the vendor database: {}",
+    "现有库继续可用，识别功能不受影响。":
+        "The existing database stays in use; identification is unaffected.",
+    "只读取本机 ARP / 邻居表并解析 ICMP 回包 TTL，不发送任何端口或协议探测包。\n"
+    "厂商来自网卡 MAC 前缀与 IEEE 全量注册表（最长前缀匹配），跨网段目标拿不到 MAC，该列会留空。\n"
+    "系统为 TTL 剩余值推测，只能区分大致家族，不代表确切版本。":
+        "Reads the local ARP/neighbor table and the TTL of ICMP replies only — "
+        "no port or protocol probes are sent.\n"
+        "Vendor comes from the MAC prefix matched against the full IEEE registry "
+        "(longest prefix); cross-subnet targets have no MAC and the column stays empty.\n"
+        "OS is inferred from the remaining TTL and only tells the family, "
+        "not the exact version.",
     # 状态点
     "● 在线": "● Online", "● 离线": "● Offline", "● 超时": "● Timeout",
     "● 响应": "● Reply", "在线": "Online", "离线": "Offline", "超时": "Timeout",

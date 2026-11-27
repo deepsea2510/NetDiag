@@ -1,4 +1,4 @@
-# NetDiag 网络诊断工具 v10.13.5
+# NetDiag 网络诊断工具 v10.14.0
 
 本地运行的网络诊断桌面工具（PySide6 原生 GUI）：原生 ICMP 批量 Ping、端口扫描、协议指纹识别、弱口令/未授权访问自查（默认关闭）、路由跟踪、DNS、SNMP v1-v3、WMI 只读查询、Syslog 服务。界面支持**中英双语**，跟随系统语言自动适配，也可在菜单手动切换。
 
@@ -85,7 +85,8 @@
 - `v10.13.3`：**修掉探测结论里的中文（截图反馈）**。根因不是漏了词条，而是「整串查字典」这条路对**带变量的句子**根本无效：`weakpass` 的说明是拼出来的（`HTTP 200，未发现登录表单`、`已试 31 组（服务端断开）`、`未授权（API 7.10）`），字典里没有这一整串，于是「Weak Cred」列在英文界面里一直是中文。修法：新增 `i18n.PT()` 句式翻译——按「中文句式 → 英文模板」逐条匹配，捕获组递归翻译（`表单 首页 · 已试 3 组` → `Form home page · Tried 3 combos`），`⚠/✓/!` 渲染前缀剥离后原样拼回，多行 tooltip 逐行翻译；固定短语仍走字典（新增 32 条，657 → 692）。同时补三处同类问题：① 扫描统计行的「未授权」缺词条；② Syslog「分类」列在日志到达时写入，没走 `T()`，切英文后新到的日志仍显示「系统告警」；③ Syslog 监听地址下拉为全角括号 `ip（网卡名）`，改为 `T("{}（{}）")` 随语言输出半角。表格单元格新增 `ORIG_ROLE` 记录中文原文，动态说明才能 EN→ZH→EN 反复往返（`i18n_roundtrip.py` 增 4 项比对）。Windows 中文网卡名做有限映射（「以太网 12」→「Ethernet 12」），只认固定词 + 序号，VPN / 虚拟网卡 / 用户自改名一律保留原样。新增门禁探针 `i18n_cjk_sweep.py`：填满 7 个页签后遍历整棵组件树，报出仍含汉字的控件与单元格（当前 0 条）；`test_i18n.py` 16 → 21 项
 - `v10.13.4`：**安装 / 卸载向导支持中英文**。安装器与卸载器是纯 Win32（ctypes，不引用主程序的 PySide6），此前界面文案全是中文，英文 Windows 上装机会看到中文向导。新增 `installer/win_lang.py`：一张 50 键的双语文案表，按 `GetUserDefaultUILanguage()` 自动选择，也可用 `NETDIAG_LANG=zh_CN|en_US` 强制覆盖；安装向导、解压进度、错误提示、卸载确认与完成框、快捷方式名，以及「设置 → 应用」里的显示名都随语言切换。顺带修掉一处跨模块不一致：`app/i18n.system_language()` 原先用 `QLocale.system()`，会被 `LANG` 环境变量带偏（Git Bash / MinGW / 部分 IDE 会设 `LANG=en_US.UTF-8`，中文 Windows 因此被判成英文），Windows 上现在统一走 `GetUserDefaultUILanguage()`，与安装器同源——否则会出现「安装向导中文、程序启动后英文」。新增门禁 `_probe/check_installer_i18n.py`（键集合一致 / 占位符一致 / 语言纯净，50 条全通过），闭环探针 `e2e_install_uninst_10134.py` 支持 `NETDIAG_LANG`，中英两种界面各跑一遍
 - `v10.13.5`：**安装 / 卸载链路安全审核与修复**。审计发现 6 处问题，其中两处为「外部可控路径 → 越权删除」：① 卸载器把注册表 `StartMenuShortcutPath` / `DesktopShortcutPath` 直接交给 `rmtree`，而 `HKCU\Software\NetDiag` 普通用户即可写 —— 把值改成文档目录，用户点「卸载」就会被递归删除；现加 `_safe_shortcut()` 白名单（必须落在桌面 / 开始菜单目录内、`.lnk` 后缀、且不能等于父目录本身）。② 卸载目标本身无保护，若攻击者在公共目录放一对同名 `NetDiag.exe` + `uninstall.exe` 并改注册表，卸载会 rmtree 整个公共目录；现加 `_too_broad()` 拒绝盘符根与系统目录。另外修：写 HKLM 失败时误删旧版卸载入口（先探测键是否已存在）、提权参数注入（路径含 `"` 可伪造 `/DESKTOP=`）、装进非空外来目录导致卸载连带删除（现二次确认）、注册表清理误伤另一份安装（改为按 `InstallPath` 匹配）。同时把打包与安装的文件复制改为 robocopy 多线程 + 安装时先解到同盘临时目录再并发复制：233 个文件从「复制十几分钟」降到秒级（打包 18 分钟 → 54 秒，安装卸载闭环 0.8 秒）。新增门禁 `_probe/test_installer_security.py`（30 条断言）与 `_probe/check_installer_i18n.py`（57 条文案）。完整说明见 [`docs/CHANGELOG-v10.13.5.md`](docs/CHANGELOG-v10.13.5.md)
-- 当前根目录为 **v10.13.5（发行版）**：含图标、指纹规则、WMI/Syslog 引擎与安全加固、WMI 远程 DCOM 修复、WMI 结果列宽自适应、Syslog 网卡监听、四模式界面配色、Ping 结果直通三处目标、Syslog 多后端存储与归档、外部库初始化脚本向导与连接预检、内置库分片与全模式历史查询、中英双语界面、便携 zip 与 exe 安装包（含卸载器）
+- `v10.14.0`：**Ping 结果增加「厂商」「系统」两列（设备识别）+ 厂商库全量化**。新增 `app/device_id.py`：一次 `GetIpNetTable` 拉全表（283 条约 4 ms，过滤 `dwType != 3`、全零、广播/组播后约 14 条有效），同网段取不到的再用 `SendARP` 补一次并设硬超时；厂商匹配用 IEEE 五张注册表的全量快照（MA-L / MA-M / MA-S / IAB / CID 共 59,368 条前缀，随包 `assets/oui-ieee.json.gz` 仅 0.64 MB），**按 9 → 7 → 6 位十六进制做最长前缀匹配**——只查前 3 字节会把 1.8 万条子区块（如 `70:b3:d5:*`）误判成「IEEE Registration Authority」；未收录的直接显示 MAC 供自行核对，也支持外挂 `oui.json` 覆盖。Ping 页右侧「厂商库」按钮显示当前条数与来源，点击可从 IEEE 联网更新到最新（`app/device_id.update_oui()`，写入 `%APPDATA%\NetDiag\oui\` 后立即生效，慢链路按文件显示进度、可中止，失败仍用原库）。`icmp_native.EchoReply` 透出回包 TTL，按剩余 TTL 粗推系统家族（Windows / Linux-Unix / 网络设备 / 本机），tooltip 标「推断经过约 N 跳；仅供参考」。识别在 Ping 完成后的**独立阶段**执行（独立线程、可取消），不进 `ping_once` 热路径；表格 7 → 9 列，厂商名过长时列内显示压缩短名、tooltip 给完整名，导出沿用通用表头读取（导出完整名），Qt 与 Web 两套界面同步。附 `tools/build_oui_db.py` 可重新生成快照。完整说明见 [`docs/CHANGELOG-v10.14.0.md`](docs/CHANGELOG-v10.14.0.md)
+- 当前根目录为 **v10.14.0（发行版）**：含图标、指纹规则、WMI/Syslog 引擎与安全加固、WMI 远程 DCOM 修复、WMI 结果列宽自适应、Syslog 网卡监听、四模式界面配色、Ping 结果直通三处目标、Syslog 多后端存储与归档、外部库初始化脚本向导与连接预检、内置库分片与全模式历史查询、中英双语界面、Ping 结果厂商与系统识别、便携 zip 与 exe 安装包（含卸载器）
 
 ## 运行
 
@@ -536,14 +537,14 @@ PyInstaller 已把图标写进 exe，快捷方式直接用 exe 的图标即可�
 双击 `dist/refresh-icon-cache.bat` 重建缓存（会重启资源管理器，不动任何文件）；
 不想重启就用新文件名跑一次（缓存键随路径变化），图标会立刻变新。
 
-## 分发方式（v10.13.5）
+## 分发方式（v10.14.0）
 
-`dist/` 下两个 10.13 产物，选一个用：
+`dist/` 下两个 10.14 产物，选一个用：
 
 | 产物 | 大小 | 适用 |
 |---|---|---|
-| `NetDiagSetup-10.13.exe` | 约 70 MB | 给同事装到自己电脑：双击 → 默认装到 `C://Program Files\NetDiag`（弹一次 UAC），自动建快捷方式、可卸载 |
-| `NetDiag_v10.13.5_portable.zip` | 约 57 MB | 拷到 U 盘 / 共享盘：解压出 `NetDiag` 文件夹，双击 `NetDiag.exe` 就能跑 |
+| `NetDiagSetup-10.14.0.exe` | 约 72 MB | 给同事装到自己电脑：双击 → 默认装到 `C://Program Files\NetDiag`（弹一次 UAC），自动建快捷方式、可卸载 |
+| `NetDiag_v10.14.0_portable.zip` | 约 58 MB | 拷到 U 盘 / 共享盘：解压出 `NetDiag` 文件夹，双击 `NetDiag.exe` 就能跑 |
 
 ### 便携版
 
@@ -575,7 +576,7 @@ NetDiag\
 命令行参数（批量部署用）：
 
 ```bat
-NetDiagSetup-10.13.exe /S /D="D:\Tools\NetDiag" /NORUN
+NetDiagSetup-10.14.0.exe /S /D="D:\Tools\NetDiag" /NORUN
 ```
 
 | 参数 | 说明 |
@@ -605,7 +606,7 @@ python tools/build_release.py     # 生成 build/payload.zip、安装包与便�
 
 ```
 netdiag/
-├── main_qt.py               # v10.13.5 PySide6 原生 GUI 入口
+├── main_qt.py               # v10.14.0 PySide6 原生 GUI 入口
 ├── test_theme.py            # 配色单元测试（令牌 / 解析 / 配置 / QSS）
 ├── test_theme_gui.py        # 换肤联动测试（离屏，验证样式与表格重上色）
 ├── test_weakpass.py         # 弱口令探测的协议级自测（本地模拟服务端）
@@ -623,11 +624,13 @@ netdiag/
 │   ├── oid_store.py         # OID 映射库（内置 + MIB + 自定义，JSON 持久化）
 │   ├── protocol_detect.py   # 协议识别
 │   ├── netifaces.py         # 本机网卡多 IP 识别
+│   ├── device_id.py         # 设备识别：ARP 邻居表 / SendARP / IEEE 厂商库（最长前缀）/ TTL 系统推断
 │   ├── theme.py             # 界面配色令牌与四模式解析（浅色/深色/跟随系统/自定义）
 │   └── utils.py             # 目标/端口解析
 ├── dicts/                   # 外挂字典示例（sample-pairs.txt / sample-passwords.txt）
-├── assets/                  # 应用图标（netdiag.ico 多尺寸）+ 使用说明.txt
+├── assets/                  # 应用图标（netdiag.ico 多尺寸）+ 使用说明.txt + oui-ieee.json.gz（IEEE 厂商库快照）
 ├── tools/make_icon.py       # 图标生成脚本（改色/改形后可一键重出 ico）
+├── tools/build_oui_db.py    # IEEE 厂商库快照生成（在线下载或复用本地 CSV）
 ├── tools/build_release.py   # 一键构建：载荷 → 安装包 → 便携 zip
 ├── installer/
 │   ├── win32ui.py           # Win32 原生控件封装（ctypes，无 tkinter/PySide6 依赖）
@@ -635,8 +638,8 @@ netdiag/
 │   ├── uninstall.py         # 卸载程序（自复制到 TEMP 后删整目录/快捷方式/注册表 + 日志）
 │   └── setup.manifest       # 清单：asInvoker + comctl32 v6 + Per-Monitor DPI（提权由程序自己按需触发）
 ├── dist/NetDiag/            # onedir 打包产物（便携目录版）
-├── dist/NetDiagSetup-10.13.exe        # 安装包（约 70 MB）
-├── dist/NetDiag_v10.13.5_portable.zip   # 便携版压缩包（约 57 MB）
+├── dist/NetDiagSetup-10.14.0.exe        # 安装包（约 72 MB）
+├── dist/NetDiag_v10.14.0_portable.zip   # 便携版压缩包（约 58 MB）
 ├── v2.0/ … v9.0/            # 历史版本完整快照，可回退
 ```
 

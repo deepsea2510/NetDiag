@@ -1,8 +1,8 @@
-"""构建 v10.13.5 发行产物：
+"""构建 v10.14.0 发行产物：
 
 1. build/payload.zip        —— 安装程序内嵌载荷（根级，装完直接落在安装目录）
-2. dist/NetDiagSetup-10.13.5.exe —— 单文件安装程序（含卸载器）
-3. dist/NetDiag_v10.13.5_portable.zip —— 便携版压缩包（解压即用）
+2. dist/NetDiagSetup-10.14.0.exe —— 单文件安装程序（含卸载器）
+3. dist/NetDiag_v10.14.0_portable.zip —— 便携版压缩包（解压即用）
 
 用法：python tools/build_release.py
 """
@@ -16,7 +16,7 @@ import time
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = "10.13.5"
+VERSION = "10.14.0"
 # onedir 产物目录；可用 NETDIAG_APP_DIR 指向别处（dist/NetDiag 被占用时先构建到 build/onedir）
 APP_DIR = os.path.abspath(os.environ.get("NETDIAG_APP_DIR")
                           or os.path.join(ROOT, "dist", "NetDiag"))

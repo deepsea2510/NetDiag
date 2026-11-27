@@ -1,4 +1,4 @@
-# NetDiag — Network Diagnostics for Windows v10.13.5
+# NetDiag — Network Diagnostics for Windows v10.14.0
 
 **NetDiag** is a locally-running Windows network diagnostics desktop tool (native PySide6 GUI) with zero backend dependencies — all data stays on your machine. The UI supports **English / 简体中文**: it follows the operating system language automatically and can be switched anytime from the **Language** menu (简体中文介绍请见 [README.md](README.md)）。
 
@@ -8,6 +8,7 @@
 ## Features
 
 - **Batch Ping** — Windows native ICMP (no per-target `ping.exe` processes), latency/loss statistics, online-first sorting
+- **Vendor / OS Hints** (v10.14) — after a ping run, a separate pass reads the local ARP neighbour table (plus `SendARP` on the same subnet), matches the MAC prefix against the full IEEE registry (59,368 prefixes across MA-L / MA-M / MA-S / IAB / CID, longest-prefix over 9 → 7 → 6 hex digits), and infers the OS family from the reply TTL. Read-only, never probes the target; unmatched prefixes show the raw MAC instead of "unknown". The bundled snapshot (0.64 MB) works offline; the **Vendor DB** button updates it online from the IEEE registry on demand. Details in [docs/CHANGELOG-v10.14.0.md](docs/CHANGELOG-v10.14.0.md)
 - **Port Scan** — high-concurrency TCP + UDP, built-in service fingerprint detection (banner grab, rules extensible via JSON)
 - **Weak Credential / Unauthorized Access Probing** — read-only, stops on first hit, global time budget; dictionaries per asset type plus external dictionary files; web login form probing (HTTP/HTTPS)
 - **Traceroute** — per-hop latency and loss; double-click a hop IP to scan its ports
@@ -23,7 +24,7 @@
 
 ## Download
 
-See the **Releases** page of this repository: `NetDiagSetup-10.13.5.exe` (installer with uninstaller) and `NetDiag_v10.13.5_portable.zip` (portable). SHA256 checksums are listed in each release.
+See the **Releases** page of this repository: `NetDiagSetup-10.14.0.exe` (installer with uninstaller) and `NetDiag_v10.14.0_portable.zip` (portable). SHA256 checksums are listed in each release.
 
 ## Run from source
 
@@ -37,7 +38,7 @@ Build a release: `python tools/build_release.py` (PyInstaller; produces installe
 ## Quality
 
 - 171 unit tests (`python -m unittest discover -p "test_*.py"`)
-- Continuous security-audit records from v10.6 through v10.13.5 in `docs/`
+- Continuous security-audit records from v10.6 through v10.14.0 in `docs/`
 - Parameterized SQL everywhere, path-traversal validation, DPAPI-encrypted stored passwords, CSV-injection-safe exports
 
 ## Scope of Use & Disclaimer

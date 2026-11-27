@@ -15,7 +15,7 @@ import re
 from typing import Iterable, Optional
 
 PRODUCT = "NetDiag"
-VERSION = "10.13.5"
+VERSION = "10.14.0"
 _TAG = re.compile(r"<[^>]+>")
 
 

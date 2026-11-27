@@ -59,6 +59,7 @@ class EchoReply:
     rtt_ms: Optional[float] = None
     status: int = IP_SUCCESS
     address: str = ""
+    ttl: Optional[int] = None          # 回包剩余 TTL，仅用于粗推系统家族
 
     @property
     def error(self) -> str:
@@ -154,7 +155,9 @@ if IS_WINDOWS:
         reply = _ICMP_ECHO_REPLY.from_buffer(buf)
         if reply.Status != IP_SUCCESS:
             return EchoReply(False, status=int(reply.Status), address=ip)
-        return EchoReply(True, rtt_ms=float(reply.RoundTripTime), address=ip)
+        # Options.Ttl 是回复包到达时的剩余值；个别系统填 0，按「未知」处理
+        ttl = int(reply.Options.Ttl) or None
+        return EchoReply(True, rtt_ms=float(reply.RoundTripTime), address=ip, ttl=ttl)
 
 else:                                                # pragma: no cover
     def available() -> bool:

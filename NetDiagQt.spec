@@ -8,9 +8,11 @@ block_cipher = None
 _DICTS = [(p, "dicts") for p in ("dicts/sample-pairs.txt", "dicts/sample-passwords.txt")
           if os.path.isfile(p)]
 # 窗口 / 任务栏图标 + 下拉箭头（QSS 里 QComboBox::down-arrow 要按路径取图）
+# v10.14：IEEE 全量厂商库快照（约 0.64 MB gzip，6 万条前缀），随包分发保证离线可用
 _ASSETS = [(p, "assets") for p in ("assets/netdiag.ico", "assets/netdiag_256.png",
                                    "assets/chevron_down_light.png",
-                                   "assets/chevron_down_dark.png")
+                                   "assets/chevron_down_dark.png",
+                                   "assets/oui-ieee.json.gz")
            if os.path.isfile(p)]
 # v10.4：服务指纹规则（可外挂扩展，内置规则随程序一起走）
 _FINGERPRINTS = [(p, "fingerprints") for p in ("fingerprints/default.json",)

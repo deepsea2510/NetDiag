@@ -26,7 +26,7 @@ import win_lang  # noqa: E402
 from win_lang import T as L  # noqa: E402
 
 APP_NAME = win_lang.app_name()
-VERSION = "10.13.5"
+VERSION = "10.14.0"
 SETUP_TITLE = L("setup_title", app=APP_NAME, ver=VERSION)
 EXE_NAME = "NetDiag.exe"
 UNINST_NAME = "uninstall.exe"
